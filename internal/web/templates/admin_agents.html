@@ -1,0 +1,38 @@
+{{define "content"}}
+<div class="card mb-2">
+  <div class="card-header">Endpoint Agents</div>
+  <p class="text-muted" style="padding:0.5rem 0;">
+    Agents connect via PSK authentication to POST events to <code>/api/events/osquery</code> and <code>/api/events/clipboard</code>.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Hostname</th><th>Source</th><th>Last Event</th><th>Events (24h)</th><th>Status</th></tr></thead>
+      <tbody>
+        {{range .Agents}}
+        <tr>
+          <td><strong>{{.Hostname}}</strong></td>
+          <td><span class="badge badge-info">{{.Source}}</span></td>
+          <td class="text-muted">{{.LastEvent.Format "2006-01-02 15:04:05"}}</td>
+          <td>{{.EventCount}}</td>
+          <td>
+            {{if .IsOnline}}<span class="badge badge-success">Online</span>
+            {{else}}<span class="badge badge-danger">Offline</span>{{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="5" class="text-muted">No agents reporting</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Agent Configuration</div>
+  <table>
+    <tr><td class="text-muted" style="width:200px;">osquery PSK</td><td><code>{{if .PSKConfigured}}(configured){{else}}Not configured{{end}}</code></td></tr>
+    <tr><td class="text-muted">osquery endpoint</td><td><code>POST /api/events/osquery</code></td></tr>
+    <tr><td class="text-muted">Clipboard endpoint</td><td><code>POST /api/events/clipboard</code></td></tr>
+  </table>
+</div>
+{{end}}

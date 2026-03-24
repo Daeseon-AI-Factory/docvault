@@ -1,0 +1,106 @@
+{{define "topbar-actions"}}
+<button class="btn btn-sm btn-primary" onclick="document.getElementById('create-rule-modal').style.display='block'">Add Rule</button>
+{{end}}
+{{define "content"}}
+<div class="card mb-2">
+  <div class="card-header">Alert Rules</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Event Type</th><th>Severity</th><th>Status</th><th>Created</th></tr></thead>
+      <tbody>
+        {{range .Rules}}
+        <tr>
+          <td><strong>{{.Name}}</strong><br><span class="text-muted" style="font-size:0.8rem;">{{.Description}}</span></td>
+          <td><code>{{.EventType}}</code></td>
+          <td>
+            {{if eq (printf "%s" .Severity) "critical"}}<span class="badge badge-danger">{{.Severity}}</span>
+            {{else if eq (printf "%s" .Severity) "high"}}<span class="badge badge-warning">{{.Severity}}</span>
+            {{else}}<span class="badge badge-secondary">{{.Severity}}</span>{{end}}
+          </td>
+          <td>{{if .IsActive}}<span class="badge badge-success">Active</span>{{else}}<span class="badge badge-secondary">Inactive</span>{{end}}</td>
+          <td class="text-muted">{{.CreatedAt.Format "2006-01-02"}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="5" class="text-muted">No rules configured</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Recent Alerts</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Severity</th><th>Message</th><th>Time</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {{range .Alerts}}
+        <tr>
+          <td>
+            {{if eq (printf "%s" .Severity) "critical"}}<span class="badge badge-danger">{{.Severity}}</span>
+            {{else if eq (printf "%s" .Severity) "high"}}<span class="badge badge-warning">{{.Severity}}</span>
+            {{else}}<span class="badge badge-secondary">{{.Severity}}</span>{{end}}
+          </td>
+          <td>{{.Message}}</td>
+          <td class="text-muted">{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+          <td>
+            {{if .IsAcknowledged}}<span class="badge badge-secondary">Acked</span>
+            {{else}}<span class="badge badge-danger">Open</span>{{end}}
+          </td>
+          <td>
+            {{if not .IsAcknowledged}}
+            <form method="POST" action="/admin/alerts/{{.ID}}/acknowledge" style="display:inline;">
+              <button type="submit" class="btn btn-sm btn-outline">Acknowledge</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="5" class="text-muted">No alerts</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Create Rule Modal -->
+<div id="create-rule-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;">
+  <div class="card" style="width:450px;margin:auto;margin-top:10vh;">
+    <div class="card-header d-flex justify-between align-center">
+      Add Alert Rule
+      <button class="btn btn-sm btn-outline" onclick="this.closest('[id=create-rule-modal]').style.display='none'">&times;</button>
+    </div>
+    <form method="POST" action="/admin/alerts/rules/create">
+      <div class="form-group">
+        <label>Rule Name</label>
+        <input type="text" name="name" class="form-control" required>
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <input type="text" name="description" class="form-control">
+      </div>
+      <div class="form-group">
+        <label>Event Type</label>
+        <select name="event_type" class="form-control">
+          <option value="usb_copy">USB Copy</option>
+          <option value="usb_mount">USB Mount</option>
+          <option value="clipboard_copy">Clipboard Copy</option>
+          <option value="file_delete">File Delete</option>
+          <option value="file_copy">File Copy</option>
+          <option value="*">Any Event</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Severity</label>
+        <select name="severity" class="form-control">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+          <option value="critical">Critical</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary">Create Rule</button>
+    </form>
+  </div>
+</div>
+{{end}}

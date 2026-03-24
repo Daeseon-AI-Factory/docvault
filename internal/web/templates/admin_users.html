@@ -1,0 +1,72 @@
+{{define "topbar-actions"}}
+<button class="btn btn-sm btn-primary" onclick="document.getElementById('create-user-modal').style.display='block'">Add User</button>
+{{end}}
+{{define "content"}}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Department</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {{range .Users}}
+        <tr>
+          <td>{{.ID}}</td>
+          <td><a href="/audit/users/{{.ID}}">{{.Username}}</a></td>
+          <td>{{.FullName}}</td>
+          <td class="text-muted">{{.Email}}</td>
+          <td><span class="badge badge-secondary">{{.Role}}</span></td>
+          <td>{{.Department}}</td>
+          <td>
+            {{if .IsActive}}<span class="badge badge-success">Active</span>
+            {{else}}<span class="badge badge-danger">Disabled</span>{{end}}
+          </td>
+          <td>
+            <a href="/admin/users/{{.ID}}/edit" class="btn btn-sm btn-outline">Edit</a>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Create User Modal -->
+<div id="create-user-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;">
+  <div class="card" style="width:450px;margin:auto;margin-top:10vh;">
+    <div class="card-header d-flex justify-between align-center">
+      Add User
+      <button class="btn btn-sm btn-outline" onclick="this.closest('[id=create-user-modal]').style.display='none'">&times;</button>
+    </div>
+    <form method="POST" action="/admin/users/create">
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" name="username" class="form-control" required>
+      </div>
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" name="full_name" class="form-control" required>
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" name="email" class="form-control" required>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" name="password" class="form-control" required>
+      </div>
+      <div class="form-group">
+        <label>Role</label>
+        <select name="role" class="form-control">
+          <option value="employee">Employee</option>
+          <option value="manager">Manager</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Department</label>
+        <input type="text" name="department" class="form-control">
+      </div>
+      <button type="submit" class="btn btn-primary">Create User</button>
+    </form>
+  </div>
+</div>
+{{end}}

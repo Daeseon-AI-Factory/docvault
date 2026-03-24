@@ -1,0 +1,35 @@
+[Unit]
+Description=DocVault Document Security Server
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=docvault
+Group=docvault
+WorkingDirectory=/opt/docvault
+
+ExecStart=/opt/docvault/bin/docvault
+
+EnvironmentFile=/opt/docvault/.env
+
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/docvault/vault /opt/docvault/logs
+PrivateTmp=yes
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=docvault
+
+[Install]
+WantedBy=multi-user.target

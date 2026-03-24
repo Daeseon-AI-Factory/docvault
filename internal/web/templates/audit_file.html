@@ -1,0 +1,24 @@
+{{define "content"}}
+<h2 class="mb-2">File Audit: {{.FileName}}</h2>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Time</th><th>Action</th><th>User</th><th>IP</th><th>Status</th></tr></thead>
+      <tbody>
+        {{range .Logs}}
+        <tr>
+          <td class="text-muted">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td>
+          <td><span class="badge badge-info">{{.Action}}</span></td>
+          <td><a href="/audit/users/{{.UserID}}">User #{{.UserID}}</a></td>
+          <td class="text-muted">{{.IPAddress}}</td>
+          <td>{{.StatusCode}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="5" class="text-muted">No audit records found</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

@@ -1,0 +1,98 @@
+{{define "topbar-actions"}}
+<div class="d-flex gap-1">
+  <button class="btn btn-sm btn-outline" onclick="document.getElementById('create-folder-modal').style.display='block'">New Folder</button>
+  <button class="btn btn-sm btn-primary" onclick="document.getElementById('upload-modal').style.display='block'">Upload File</button>
+</div>
+{{end}}
+{{define "content"}}
+<ul class="breadcrumb">
+  <li><a href="/files">Root</a></li>
+  {{range .Breadcrumbs}}
+  <li><a href="/files?folder_id={{.ID}}">{{.Name}}</a></li>
+  {{end}}
+</ul>
+
+{{if .Folders}}
+<div class="card">
+  <div class="card-header">Folders</div>
+  <div class="file-grid">
+    {{range .Folders}}
+    <a href="/files?folder_id={{.ID}}" class="file-item" style="text-decoration:none;color:inherit;">
+      <div class="file-icon">&#128193;</div>
+      <div class="file-name">{{.Name}}</div>
+    </a>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+<div class="card">
+  <div class="card-header">Files</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Size</th><th>Version</th><th>Modified</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {{range .Files}}
+        <tr>
+          <td><a href="/files/{{.ID}}">{{.Name}}</a></td>
+          <td class="text-muted">{{formatBytes .SizeBytes}}</td>
+          <td>v{{.CurrentVersion}}</td>
+          <td class="text-muted">{{.UpdatedAt.Format "2006-01-02 15:04"}}</td>
+          <td>
+            {{if .IsCheckedOut}}<span class="badge badge-warning">Checked Out</span>
+            {{else}}<span class="badge badge-success">Available</span>{{end}}
+          </td>
+          <td>
+            <a href="/api/files/{{.ID}}/download" class="btn btn-sm btn-outline">Download</a>
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6" class="text-muted">No files in this folder</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Upload Modal -->
+<div id="upload-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;display:none;align-items:center;justify-content:center;">
+  <div class="card" style="width:400px;margin:auto;margin-top:20vh;">
+    <div class="card-header d-flex justify-between align-center">
+      Upload File
+      <button class="btn btn-sm btn-outline" onclick="this.closest('[id=upload-modal]').style.display='none'">&times;</button>
+    </div>
+    <form method="POST" action="/files/upload" enctype="multipart/form-data">
+      <input type="hidden" name="folder_id" value="{{.CurrentFolderID}}">
+      <div class="form-group">
+        <label>File</label>
+        <input type="file" name="file" class="form-control" required>
+      </div>
+      <div class="form-group">
+        <label>Comment</label>
+        <input type="text" name="comment" class="form-control" placeholder="Optional comment">
+      </div>
+      <button type="submit" class="btn btn-primary">Upload</button>
+    </form>
+  </div>
+</div>
+
+<!-- Create Folder Modal -->
+<div id="create-folder-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;">
+  <div class="card" style="width:400px;margin:auto;margin-top:20vh;">
+    <div class="card-header d-flex justify-between align-center">
+      New Folder
+      <button class="btn btn-sm btn-outline" onclick="this.closest('[id=create-folder-modal]').style.display='none'">&times;</button>
+    </div>
+    <form method="POST" action="/folders/create">
+      <input type="hidden" name="parent_id" value="{{.CurrentFolderID}}">
+      <div class="form-group">
+        <label>Folder Name</label>
+        <input type="text" name="name" class="form-control" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Create</button>
+    </form>
+  </div>
+</div>
+{{end}}

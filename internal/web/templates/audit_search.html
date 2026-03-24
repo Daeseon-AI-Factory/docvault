@@ -1,0 +1,57 @@
+{{define "content"}}
+<div class="card mb-2">
+  <form method="GET" action="/audit/search" class="d-flex gap-1 align-center" style="flex-wrap:wrap;">
+    <div class="form-group" style="margin-bottom:0;">
+      <label>User ID</label>
+      <input type="number" name="user_id" class="form-control" value="{{.Filter.UserID}}" placeholder="Any">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>Action</label>
+      <select name="action" class="form-control">
+        <option value="">Any</option>
+        <option value="file.upload" {{if eq .Filter.Action "file.upload"}}selected{{end}}>File Upload</option>
+        <option value="file.download" {{if eq .Filter.Action "file.download"}}selected{{end}}>File Download</option>
+        <option value="file.delete" {{if eq .Filter.Action "file.delete"}}selected{{end}}>File Delete</option>
+        <option value="file.checkout" {{if eq .Filter.Action "file.checkout"}}selected{{end}}>File Checkout</option>
+        <option value="file.checkin" {{if eq .Filter.Action "file.checkin"}}selected{{end}}>File Checkin</option>
+        <option value="login" {{if eq .Filter.Action "login"}}selected{{end}}>Login</option>
+        <option value="folder.create" {{if eq .Filter.Action "folder.create"}}selected{{end}}>Folder Create</option>
+        <option value="user.create" {{if eq .Filter.Action "user.create"}}selected{{end}}>User Create</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>From</label>
+      <input type="datetime-local" name="from" class="form-control" value="{{.Filter.From}}">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>To</label>
+      <input type="datetime-local" name="to" class="form-control" value="{{.Filter.To}}">
+    </div>
+    <div class="form-group" style="margin-bottom:0;align-self:flex-end;">
+      <button type="submit" class="btn btn-primary">Search</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Target</th><th>IP</th><th>Status</th></tr></thead>
+      <tbody>
+        {{range .Logs}}
+        <tr>
+          <td class="text-muted">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td>
+          <td><a href="/audit/users/{{.UserID}}">{{.UserID}}</a></td>
+          <td><span class="badge badge-info">{{.Action}}</span></td>
+          <td>{{.TargetType}} {{if .TargetID}}#{{.TargetID}}{{end}} {{.TargetName}}</td>
+          <td class="text-muted">{{.IPAddress}}</td>
+          <td>{{.StatusCode}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6" class="text-muted">No results found</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

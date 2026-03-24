@@ -1,0 +1,75 @@
+{{define "content"}}
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-value">{{.Stats.TotalEvents}}</div>
+    <div class="stat-label">Total Events</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{.Stats.TodayEvents}}</div>
+    <div class="stat-label">Events Today</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{.Stats.TotalFiles}}</div>
+    <div class="stat-label">Files Stored</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{.Stats.ActiveAlerts}}</div>
+    <div class="stat-label">Active Alerts</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+  <div class="card">
+    <div class="card-header">Recent Activity</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Target</th></tr></thead>
+        <tbody>
+          {{range .RecentLogs}}
+          <tr>
+            <td class="text-muted">{{.CreatedAt.Format "15:04:05"}}</td>
+            <td>{{.UserID}}</td>
+            <td><span class="badge badge-info">{{.Action}}</span></td>
+            <td>{{.TargetName}}</td>
+          </tr>
+          {{else}}
+          <tr><td colspan="4" class="text-muted">No recent activity</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header d-flex justify-between align-center">
+      Unacknowledged Alerts
+      <a href="/admin/alerts" class="btn btn-sm btn-outline">View All</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Severity</th><th>Message</th><th>Time</th><th></th></tr></thead>
+        <tbody>
+          {{range .Alerts}}
+          <tr>
+            <td>
+              {{if eq (printf "%s" .Severity) "critical"}}<span class="badge badge-danger">{{.Severity}}</span>
+              {{else if eq (printf "%s" .Severity) "high"}}<span class="badge badge-warning">{{.Severity}}</span>
+              {{else}}<span class="badge badge-secondary">{{.Severity}}</span>{{end}}
+            </td>
+            <td>{{.Message}}</td>
+            <td class="text-muted">{{.CreatedAt.Format "15:04"}}</td>
+            <td>
+              <form method="POST" action="/admin/alerts/{{.ID}}/acknowledge">
+                <button type="submit" class="btn btn-sm btn-outline">Ack</button>
+              </form>
+            </td>
+          </tr>
+          {{else}}
+          <tr><td colspan="4" class="text-muted">No active alerts</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{{end}}

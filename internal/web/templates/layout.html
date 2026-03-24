@@ -1,0 +1,48 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.Title}} - DocVault</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <nav class="sidebar">
+      <div class="sidebar-brand">DocVault</div>
+      <ul class="sidebar-nav">
+        <li><a href="/dashboard" {{if eq .Active "dashboard"}}class="active"{{end}}>Dashboard</a></li>
+        <li><a href="/files" {{if eq .Active "files"}}class="active"{{end}}>Files</a></li>
+
+        <li class="sidebar-section">Audit</li>
+        <li><a href="/audit/search" {{if eq .Active "audit-search"}}class="active"{{end}}>Audit Search</a></li>
+
+        {{if eq .Role "admin"}}
+        <li class="sidebar-section">Admin</li>
+        <li><a href="/admin/users" {{if eq .Active "admin-users"}}class="active"{{end}}>Users</a></li>
+        <li><a href="/admin/alerts" {{if eq .Active "admin-alerts"}}class="active"{{end}}>Alerts</a></li>
+        <li><a href="/admin/agents" {{if eq .Active "admin-agents"}}class="active"{{end}}>Agent Status</a></li>
+        {{end}}
+      </ul>
+      <div class="sidebar-user">
+        Signed in as <strong>{{.Username}}</strong>
+        <br>
+        <a href="/logout" style="color:var(--sidebar-text);font-size:0.8rem;">Logout</a>
+      </div>
+    </nav>
+
+    <div class="main">
+      <header class="topbar">
+        <h1>{{.Title}}</h1>
+        <div id="topbar-actions">{{block "topbar-actions" .}}{{end}}</div>
+      </header>
+      <div class="content" id="main-content">
+        {{block "content" .}}{{end}}
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+{{end}}
