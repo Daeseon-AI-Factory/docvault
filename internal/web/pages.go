@@ -84,8 +84,21 @@ func (h *PageHandler) base(r *http.Request, title, active string) basePage {
 	return bp
 }
 
+// pageData builds a template data map with base fields + CSRF token pre-filled.
+func (h *PageHandler) pageData(r *http.Request, title, active string) map[string]interface{} {
+	bp := h.base(r, title, active)
+	return map[string]interface{}{
+		"Title":     bp.Title,
+		"Active":    bp.Active,
+		"Username":  bp.Username,
+		"Role":      bp.Role,
+		"UserID":    bp.UserID,
+		"CSRFToken": CSRFToken(r),
+	}
+}
+
 func (h *PageHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
-	renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": ""})
+	renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": "", "CSRFToken": CSRFToken(r)})
 }
 
 func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
@@ -99,13 +112,13 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.FullName, &u.Role, &u.Department, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
 
 	if err != nil || user.CheckPassword(u.PasswordHash, password) != nil || !u.IsActive {
-		renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": "Invalid username or password"})
+		renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": "Invalid username or password", "CSRFToken": CSRFToken(r)})
 		return
 	}
 
 	tokens, err := h.jwtSvc.GenerateTokenPair(&u)
 	if err != nil {
-		renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": "Internal error"})
+		renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": "Internal error", "CSRFToken": CSRFToken(r)})
 		return
 	}
 
@@ -128,8 +141,6 @@ func (h *PageHandler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
-	bp := h.base(r, "Dashboard", "dashboard")
-
 	stats, _ := h.auditRepo.GetDashboardStats(r.Context())
 	if stats == nil {
 		stats = &audit.DashboardStats{ActionCounts: map[string]int64{}}
@@ -145,17 +156,14 @@ func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		ActiveAlerts int
 	}
 
-	renderPage(w, h.tc, "dashboard.html", map[string]interface{}{
-		"Title": bp.Title, "Active": bp.Active, "Username": bp.Username, "Role": bp.Role,
-		"Stats":      dashStats{stats.TotalEvents, stats.TodayEvents, 0, len(alerts)},
-		"RecentLogs": recentLogs,
-		"Alerts":     alerts,
-	})
+	data := h.pageData(r, "Dashboard", "dashboard")
+	data["Stats"] = dashStats{stats.TotalEvents, stats.TodayEvents, 0, len(alerts)}
+	data["RecentLogs"] = recentLogs
+	data["Alerts"] = alerts
+	renderPage(w, h.tc, "dashboard.html", data)
 }
 
 func (h *PageHandler) FileBrowser(w http.ResponseWriter, r *http.Request) {
-	bp := h.base(r, "Files", "files")
-
 	var folderID *int64
 	var currentFolderID int64
 	if idStr := r.URL.Query().Get("folder_id"); idStr != "" {
@@ -172,17 +180,18 @@ func (h *PageHandler) FileBrowser(w http.ResponseWriter, r *http.Request) {
 		files, _ = h.vaultRepo.ListFilesByFolder(r.Context(), *folderID)
 	}
 
-	renderPage(w, h.tc, "files.html", map[string]interface{}{
-		"Title": bp.Title, "Active": bp.Active, "Username": bp.Username, "Role": bp.Role,
-		"Folders": folders, "Files": files,
-		"CurrentFolderID": currentFolderID,
-		"Breadcrumbs":     []folder.Folder{},
-	})
+	// Build breadcrumb chain
+	breadcrumbs := h.buildBreadcrumbs(r, folderID)
+
+	data := h.pageData(r, "Files", "files")
+	data["Folders"] = folders
+	data["Files"] = files
+	data["CurrentFolderID"] = currentFolderID
+	data["Breadcrumbs"] = breadcrumbs
+	renderPage(w, h.tc, "files.html", data)
 }
 
 func (h *PageHandler) FileDetail(w http.ResponseWriter, r *http.Request) {
-	bp := h.base(r, "File Detail", "files")
-
 	fileIDStr := chi.URLParam(r, "fileID")
 	fileID, err := strconv.ParseInt(fileIDStr, 10, 64)
 	if err != nil {
@@ -205,16 +214,15 @@ func (h *PageHandler) FileDetail(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
 	checkedOutByMe := file.IsCheckedOut && file.CheckedOutBy != nil && u != nil && *file.CheckedOutBy == u.ID
 
-	renderPage(w, h.tc, "file_detail.html", map[string]interface{}{
-		"Title": file.Name, "Active": bp.Active, "Username": bp.Username, "Role": bp.Role,
-		"File": file, "Versions": versions, "AuditLogs": auditLogs,
-		"CheckedOutByMe": checkedOutByMe,
-	})
+	data := h.pageData(r, file.Name, "files")
+	data["File"] = file
+	data["Versions"] = versions
+	data["AuditLogs"] = auditLogs
+	data["CheckedOutByMe"] = checkedOutByMe
+	renderPage(w, h.tc, "file_detail.html", data)
 }
 
 func (h *PageHandler) AuditUserPage(w http.ResponseWriter, r *http.Request) {
-	bp := h.base(r, "User Timeline", "audit-search")
-
 	userIDStr := chi.URLParam(r, "userID")
 	userID, _ := strconv.ParseInt(userIDStr, 10, 64)
 
@@ -230,16 +238,15 @@ func (h *PageHandler) AuditUserPage(w http.ResponseWriter, r *http.Request) {
 
 	timeline, _ := h.endpointRepo.UnifiedTimeline(r.Context(), userID, 50, offset)
 
-	renderPage(w, h.tc, "audit_user.html", map[string]interface{}{
-		"Title": bp.Title, "Active": bp.Active, "Username": bp.Username, "Role": bp.Role,
-		"TargetUser": targetUser, "Timeline": timeline,
-		"HasMore": len(timeline) >= 50, "NextOffset": offset + 50,
-	})
+	data := h.pageData(r, "User Timeline", "audit-search")
+	data["TargetUser"] = targetUser
+	data["Timeline"] = timeline
+	data["HasMore"] = len(timeline) >= 50
+	data["NextOffset"] = offset + 50
+	renderPage(w, h.tc, "audit_user.html", data)
 }
 
 func (h *PageHandler) AuditFilePage(w http.ResponseWriter, r *http.Request) {
-	bp := h.base(r, "File Audit", "audit-search")
-
 	fileIDStr := chi.URLParam(r, "fileID")
 	fileID, _ := strconv.ParseInt(fileIDStr, 10, 64)
 
@@ -253,15 +260,13 @@ func (h *PageHandler) AuditFilePage(w http.ResponseWriter, r *http.Request) {
 		fileName = f.Name
 	}
 
-	renderPage(w, h.tc, "audit_file.html", map[string]interface{}{
-		"Title": bp.Title, "Active": bp.Active, "Username": bp.Username, "Role": bp.Role,
-		"FileName": fileName, "Logs": logs,
-	})
+	data := h.pageData(r, "File Audit", "audit-search")
+	data["FileName"] = fileName
+	data["Logs"] = logs
+	renderPage(w, h.tc, "audit_file.html", data)
 }
 
 func (h *PageHandler) AuditSearchPage(w http.ResponseWriter, r *http.Request) {
-	bp := h.base(r, "Audit Search", "audit-search")
-
 	params := audit.SearchParams{Limit: 50}
 	filter := struct{ UserID, Action, From, To string }{
 		r.URL.Query().Get("user_id"), r.URL.Query().Get("action"),
@@ -290,36 +295,49 @@ func (h *PageHandler) AuditSearchPage(w http.ResponseWriter, r *http.Request) {
 
 	logs, _ := h.auditRepo.Search(r.Context(), params)
 
-	renderPage(w, h.tc, "audit_search.html", map[string]interface{}{
-		"Title": bp.Title, "Active": bp.Active, "Username": bp.Username, "Role": bp.Role,
-		"Filter": filter, "Logs": logs,
-	})
+	data := h.pageData(r, "Audit Search", "audit-search")
+	data["Filter"] = filter
+	data["Logs"] = logs
+	renderPage(w, h.tc, "audit_search.html", data)
 }
 
 func (h *PageHandler) AdminUsersPage(w http.ResponseWriter, r *http.Request) {
-	bp := h.base(r, "User Management", "admin-users")
 	users, _ := h.userRepo.List(r.Context())
+	data := h.pageData(r, "User Management", "admin-users")
+	data["Users"] = users
+	renderPage(w, h.tc, "admin_users.html", data)
+}
 
-	renderPage(w, h.tc, "admin_users.html", map[string]interface{}{
-		"Title": bp.Title, "Active": bp.Active, "Username": bp.Username, "Role": bp.Role,
-		"Users": users,
-	})
+func (h *PageHandler) AdminUserEditPage(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "userID")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	u, err := h.userRepo.GetByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, "user not found", http.StatusNotFound)
+		return
+	}
+
+	data := h.pageData(r, "Edit User", "admin-users")
+	data["EditUser"] = u
+	renderPage(w, h.tc, "admin_user_edit.html", data)
 }
 
 func (h *PageHandler) AdminAlertsPage(w http.ResponseWriter, r *http.Request) {
-	bp := h.base(r, "Alert Management", "admin-alerts")
 	rules, _ := h.alertRepo.ListRules(r.Context(), false)
 	alerts, _ := h.alertRepo.ListAlerts(r.Context(), false, 50, 0)
 
-	renderPage(w, h.tc, "admin_alerts.html", map[string]interface{}{
-		"Title": bp.Title, "Active": bp.Active, "Username": bp.Username, "Role": bp.Role,
-		"Rules": rules, "Alerts": alerts,
-	})
+	data := h.pageData(r, "Alert Management", "admin-alerts")
+	data["Rules"] = rules
+	data["Alerts"] = alerts
+	renderPage(w, h.tc, "admin_alerts.html", data)
 }
 
 func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
-	bp := h.base(r, "Agent Status", "admin-agents")
-
 	type agentInfo struct {
 		Hostname   string
 		Source     string
@@ -345,8 +363,26 @@ func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	renderPage(w, h.tc, "admin_agents.html", map[string]interface{}{
-		"Title": bp.Title, "Active": bp.Active, "Username": bp.Username, "Role": bp.Role,
-		"Agents": agents, "PSKConfigured": h.pskConfigured,
-	})
+	data := h.pageData(r, "Agent Status", "admin-agents")
+	data["Agents"] = agents
+	data["PSKConfigured"] = h.pskConfigured
+	renderPage(w, h.tc, "admin_agents.html", data)
+}
+
+// buildBreadcrumbs walks up the folder tree to build navigation breadcrumbs.
+func (h *PageHandler) buildBreadcrumbs(r *http.Request, folderID *int64) []folder.Folder {
+	if folderID == nil {
+		return nil
+	}
+	var crumbs []folder.Folder
+	currentID := folderID
+	for currentID != nil {
+		f, err := h.folderRepo.GetByID(r.Context(), *currentID)
+		if err != nil {
+			break
+		}
+		crumbs = append([]folder.Folder{*f}, crumbs...)
+		currentID = f.ParentID
+	}
+	return crumbs
 }

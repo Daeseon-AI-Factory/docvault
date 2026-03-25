@@ -34,6 +34,11 @@ func NewJWTService(secret string) *JWTService {
 	return &JWTService{secret: []byte(secret)}
 }
 
+// Secret returns the signing secret as a string (used for CSRF token derivation).
+func (s *JWTService) Secret() string {
+	return string(s.secret)
+}
+
 func (s *JWTService) GenerateTokenPair(u *user.User) (*TokenPair, error) {
 	accessToken, err := s.generateToken(u, accessTokenDuration)
 	if err != nil {

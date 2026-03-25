@@ -60,6 +60,7 @@
             <td class="text-muted">{{.CreatedAt.Format "15:04"}}</td>
             <td>
               <form method="POST" action="/admin/alerts/{{.ID}}/acknowledge">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                 <button type="submit" class="btn btn-sm btn-outline">Ack</button>
               </form>
             </td>

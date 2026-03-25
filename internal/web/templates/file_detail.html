@@ -2,6 +2,7 @@
 <div class="d-flex gap-1">
   {{if not .File.IsCheckedOut}}
   <form method="POST" action="/files/{{.File.ID}}/checkout" style="display:inline;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <button type="submit" class="btn btn-sm btn-outline">Checkout</button>
   </form>
   <a href="/api/files/{{.File.ID}}/download" class="btn btn-sm btn-primary">Download</a>
@@ -84,6 +85,7 @@
       <button class="btn btn-sm btn-outline" onclick="this.closest('[id=checkin-modal]').style.display='none'">&times;</button>
     </div>
     <form method="POST" action="/files/{{.File.ID}}/checkin" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <div class="form-group">
         <label>Updated File (optional)</label>
         <input type="file" name="file" class="form-control">

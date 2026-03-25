@@ -369,3 +369,61 @@ func (h *FormHandler) AcknowledgeAlert(w http.ResponseWriter, r *http.Request) {
 	h.alertRepo.Acknowledge(r.Context(), alertID, u.ID)
 	http.Redirect(w, r, "/admin/alerts", http.StatusSeeOther)
 }
+
+// EditUser handles POST /admin/users/{userID}/edit
+func (h *FormHandler) EditUser(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "userID")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+
+	existing, err := h.userRepo.GetByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, "user not found", http.StatusNotFound)
+		return
+	}
+
+	if v := r.FormValue("full_name"); v != "" {
+		existing.FullName = v
+	}
+	if v := r.FormValue("email"); v != "" {
+		existing.Email = v
+	}
+	if v := r.FormValue("role"); v != "" {
+		existing.Role = user.Role(v)
+	}
+	existing.Department = r.FormValue("department")
+	existing.IsActive = r.FormValue("is_active") == "true"
+
+	if err := h.userRepo.Update(r.Context(), existing); err != nil {
+		h.logger.Error("form edit user", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+}
+
+// ResetPassword handles POST /admin/users/{userID}/reset-password
+func (h *FormHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "userID")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+
+	password := r.FormValue("password")
+	if password == "" {
+		http.Error(w, "password is required", http.StatusBadRequest)
+		return
+	}
+
+	hash, err := user.HashPassword(password)
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.userRepo.UpdatePassword(r.Context(), id, hash); err != nil {
+		h.logger.Error("form reset password", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/admin/users/%d/edit", id), http.StatusSeeOther)
+}

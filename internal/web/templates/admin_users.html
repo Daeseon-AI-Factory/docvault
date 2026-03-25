@@ -37,6 +37,7 @@
       <button class="btn btn-sm btn-outline" onclick="this.closest('[id=create-user-modal]').style.display='none'">&times;</button>
     </div>
     <form method="POST" action="/admin/users/create">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <div class="form-group">
         <label>Username</label>
         <input type="text" name="username" class="form-control" required>

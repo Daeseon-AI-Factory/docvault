@@ -50,6 +50,7 @@
           <td>
             {{if not .IsAcknowledged}}
             <form method="POST" action="/admin/alerts/{{.ID}}/acknowledge" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn-sm btn-outline">Acknowledge</button>
             </form>
             {{end}}
@@ -71,6 +72,7 @@
       <button class="btn btn-sm btn-outline" onclick="this.closest('[id=create-rule-modal]').style.display='none'">&times;</button>
     </div>
     <form method="POST" action="/admin/alerts/rules/create">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <div class="form-group">
         <label>Rule Name</label>
         <input type="text" name="name" class="form-control" required>

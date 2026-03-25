@@ -53,6 +53,7 @@ func newTemplateCache() (*templateCache, error) {
 		"audit_file.html",
 		"audit_search.html",
 		"admin_users.html",
+		"admin_user_edit.html",
 		"admin_alerts.html",
 		"admin_agents.html",
 	}

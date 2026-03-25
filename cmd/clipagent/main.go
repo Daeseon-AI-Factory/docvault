@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"time"
 	"unsafe"
 
@@ -168,35 +169,45 @@ func runMonitor() {
 	// Enroll with server
 	enrollAgent(client, serverURL, psk, hostname, username)
 
+	// Graceful shutdown on SIGINT/SIGTERM
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+
 	var lastSeq uint32
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 
 	for {
-		time.Sleep(1 * time.Second)
+		select {
+		case <-quit:
+			log.Println("shutting down clipboard agent")
+			return
+		case <-ticker.C:
+			seq := getClipboardSequence()
+			if seq == lastSeq || seq == 0 {
+				continue
+			}
+			lastSeq = seq
 
-		seq := getClipboardSequence()
-		if seq == lastSeq || seq == 0 {
-			continue
+			contentSize := getClipboardContentSize()
+			if contentSize == 0 {
+				continue
+			}
+
+			fgApp := getForegroundWindowTitle()
+
+			event := ClipboardEvent{
+				Hostname:    hostname,
+				Username:    username,
+				Action:      "copy",
+				Application: fgApp,
+				ContentType: "text",
+				ContentSize: contentSize,
+				Timestamp:   time.Now().UTC().Format(time.RFC3339),
+			}
+
+			go sendEvent(client, serverURL, psk, &event)
 		}
-		lastSeq = seq
-
-		contentSize := getClipboardContentSize()
-		if contentSize == 0 {
-			continue
-		}
-
-		fgApp := getForegroundWindowTitle()
-
-		event := ClipboardEvent{
-			Hostname:    hostname,
-			Username:    username,
-			Action:      "copy",
-			Application: fgApp,
-			ContentType: "text",
-			ContentSize: contentSize,
-			Timestamp:   time.Now().UTC().Format(time.RFC3339),
-		}
-
-		go sendEvent(client, serverURL, psk, &event)
 	}
 }
 

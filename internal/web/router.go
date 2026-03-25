@@ -136,9 +136,11 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Post("/api/alerts/rules", deps.AlertHandler.CreateRule)
 	})
 
-	// Protected web pages (cookie-based auth)
+	// Protected web pages (cookie-based auth + auto-refresh + CSRF)
 	r.Group(func(r chi.Router) {
+		r.Use(auth.TokenRefreshMiddleware(deps.JWTSvc))
 		r.Use(auth.WebMiddleware(deps.JWTSvc))
+		r.Use(CSRFMiddleware(deps.JWTSvc.Secret()))
 
 		r.Get("/dashboard", deps.PageHandler.Dashboard)
 		r.Get("/files", deps.PageHandler.FileBrowser)
@@ -160,6 +162,9 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Post("/admin/users/create", deps.FormHandler.CreateUser)
 		r.Post("/admin/alerts/rules/create", deps.FormHandler.CreateAlertRule)
 		r.Post("/admin/alerts/{alertID}/acknowledge", deps.FormHandler.AcknowledgeAlert)
+		r.Get("/admin/users/{userID}/edit", deps.PageHandler.AdminUserEditPage)
+		r.Post("/admin/users/{userID}/edit", deps.FormHandler.EditUser)
+		r.Post("/admin/users/{userID}/reset-password", deps.FormHandler.ResetPassword)
 	})
 
 	return r

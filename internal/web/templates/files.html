@@ -64,6 +64,7 @@
       <button class="btn btn-sm btn-outline" onclick="this.closest('[id=upload-modal]').style.display='none'">&times;</button>
     </div>
     <form method="POST" action="/files/upload" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <input type="hidden" name="folder_id" value="{{.CurrentFolderID}}">
       <div class="form-group">
         <label>File</label>
@@ -86,6 +87,7 @@
       <button class="btn btn-sm btn-outline" onclick="this.closest('[id=create-folder-modal]').style.display='none'">&times;</button>
     </div>
     <form method="POST" action="/folders/create">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <input type="hidden" name="parent_id" value="{{.CurrentFolderID}}">
       <div class="form-group">
         <label>Folder Name</label>

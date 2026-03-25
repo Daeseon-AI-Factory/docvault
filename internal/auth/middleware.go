@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
 )
@@ -95,6 +96,37 @@ func WebMiddleware(jwtSvc *JWTService) func(http.Handler) http.Handler {
 
 			ctx := context.WithValue(r.Context(), userContextKey, authUser)
 			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// TokenRefreshMiddleware checks if the access token expires within 5 minutes
+// and transparently re-issues a new cookie. This keeps web sessions alive.
+func TokenRefreshMiddleware(jwtSvc *JWTService) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cookie, err := r.Cookie("token")
+			if err == nil && cookie.Value != "" {
+				claims, err := jwtSvc.ValidateToken(cookie.Value)
+				if err == nil && claims.ExpiresAt != nil {
+					remaining := time.Until(claims.ExpiresAt.Time)
+					if remaining > 0 && remaining < 5*time.Minute {
+						// Re-issue token
+						u := &user.User{
+							ID:       claims.UserID,
+							Username: claims.Username,
+							Role:     claims.Role,
+						}
+						if pair, err := jwtSvc.GenerateTokenPair(u); err == nil {
+							http.SetCookie(w, &http.Cookie{
+								Name: "token", Value: pair.AccessToken, Path: "/",
+								HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 900,
+							})
+						}
+					}
+				}
+			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }
