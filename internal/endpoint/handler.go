@@ -7,10 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
 )
 
 // AlertEvaluator is called after storing an event to fire alert rules.
@@ -23,7 +26,13 @@ type Handler struct {
 	db             *pgxpool.Pool
 	psk            string
 	alertEvaluator AlertEvaluator
+	monCfgRepo     *monitoring.Repository
 	logger         *slog.Logger
+}
+
+// SetMonitoringConfig sets the monitoring config repository for DB-based lookups.
+func (h *Handler) SetMonitoringConfig(monCfgRepo *monitoring.Repository) {
+	h.monCfgRepo = monCfgRepo
 }
 
 func NewHandler(repo *Repository, db *pgxpool.Pool, psk string, alertEval AlertEvaluator, logger *slog.Logger) *Handler {
@@ -92,7 +101,15 @@ func (h *Handler) ReceiveOsquery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hostnameMap := h.buildHostnameMap(r.Context(), hostnames)
-	events := NormalizeOsqueryEvents(&batch, hostnameMap)
+
+	// Use DB-based disguise checker if available
+	var checker ExtensionDisguiseChecker
+	if h.monCfgRepo != nil {
+		if cfg, err := h.monCfgRepo.Get(r.Context()); err == nil {
+			checker = cfg
+		}
+	}
+	events := NormalizeOsqueryEventsWithChecker(&batch, hostnameMap, checker)
 
 	if err := h.repo.InsertBatch(r.Context(), events); err != nil {
 		h.logger.Error("receive osquery events", "error", err, "count", len(events))
@@ -215,7 +232,7 @@ func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// AgentConfig handles POST /api/config — serves osquery config to enrolled agents.
+// AgentConfig handles POST /api/config — serves dynamic osquery config from DB.
 func (h *Handler) AgentConfig(w http.ResponseWriter, r *http.Request) {
 	if h.psk != "" {
 		token := r.Header.Get("X-Osquery-PSK")
@@ -225,9 +242,159 @@ func (h *Handler) AgentConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Return a minimal valid osquery config
+	cfg := h.buildOsqueryConfig(r.Context())
+
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprint(w, `{"schedule":{"file_events":{"query":"SELECT * FROM file_events;","interval":30}},"node_invalid":false}`)
+	json.NewEncoder(w).Encode(cfg)
+}
+
+// buildOsqueryConfig generates osquery config dynamically from DB monitoring settings.
+func (h *Handler) buildOsqueryConfig(ctx context.Context) map[string]interface{} {
+	schedule := map[string]interface{}{
+		"file_events": map[string]interface{}{
+			"query":    "SELECT target_path, action, time, md5, sha256 FROM file_events;",
+			"interval": 30,
+			"removed":  false,
+		},
+		"usb_devices": map[string]interface{}{
+			"query":    "SELECT vendor, model, serial, removable FROM usb_devices WHERE removable = 1;",
+			"interval": 60,
+		},
+		"process_events": map[string]interface{}{
+			"query":    "SELECT pid, path, cmdline, parent, time FROM process_events WHERE path NOT LIKE 'C:\\Windows\\%';",
+			"interval": 30,
+			"removed":  false,
+		},
+		"extension_rename_detect": map[string]interface{}{
+			"query":    "SELECT target_path, action, time, md5 FROM file_events WHERE action = 'MOVED' OR action = 'RENAMED';",
+			"interval": 15,
+			"removed":  false,
+		},
+	}
+
+	if h.monCfgRepo == nil {
+		return map[string]interface{}{"schedule": schedule, "node_invalid": false}
+	}
+
+	monCfg, err := h.monCfgRepo.Get(ctx)
+	if err != nil {
+		return map[string]interface{}{"schedule": schedule, "node_invalid": false}
+	}
+
+	// Build extension filter for SQL LIKE clauses
+	var extLikes []string
+	for _, ext := range monCfg.Extensions {
+		if ext.IsSensitive {
+			extLikes = append(extLikes, fmt.Sprintf("pof.path LIKE '%%%s'", ext.Extension))
+		}
+	}
+	extFilter := strings.Join(extLikes, " OR ")
+	if extFilter == "" {
+		extFilter = "1=0"
+	}
+
+	// Messenger file access query (built from DB process groups)
+	messengerNames := monCfg.ProcessNamesForGroup("messenger")
+	if len(messengerNames) > 0 {
+		var nameList []string
+		for _, n := range messengerNames {
+			nameList = append(nameList, fmt.Sprintf("'%s'", n))
+		}
+		schedule["messenger_file_access"] = map[string]interface{}{
+			"query": fmt.Sprintf(
+				"SELECT pof.pid, p.path, p.name, pof.path AS accessed_file FROM process_open_files pof JOIN processes p ON pof.pid = p.pid WHERE p.name IN (%s) AND (%s);",
+				strings.Join(nameList, ","), extFilter),
+			"interval": 15,
+		}
+	}
+
+	// Email file access query
+	emailNames := monCfg.ProcessNamesForGroup("email")
+	if len(emailNames) > 0 {
+		var nameList []string
+		for _, n := range emailNames {
+			nameList = append(nameList, fmt.Sprintf("'%s'", n))
+		}
+		schedule["email_file_access"] = map[string]interface{}{
+			"query": fmt.Sprintf(
+				"SELECT pof.pid, p.path, p.name, pof.path AS accessed_file FROM process_open_files pof JOIN processes p ON pof.pid = p.pid WHERE p.name IN (%s) AND (%s);",
+				strings.Join(nameList, ","), extFilter),
+			"interval": 15,
+		}
+	}
+
+	// Browser/cloud upload query
+	browserNames := monCfg.ProcessNamesForGroup("browser")
+	if len(browserNames) > 0 {
+		var nameList []string
+		for _, n := range browserNames {
+			nameList = append(nameList, fmt.Sprintf("'%s'", n))
+		}
+		schedule["cloud_upload_access"] = map[string]interface{}{
+			"query": fmt.Sprintf(
+				"SELECT pof.pid, p.path, p.name, pof.path AS accessed_file FROM process_open_files pof JOIN processes p ON pof.pid = p.pid WHERE p.name IN (%s) AND (%s) AND pof.path NOT LIKE '%%Cache%%' AND pof.path NOT LIKE '%%Temp%%';",
+				strings.Join(nameList, ","), extFilter),
+			"interval": 30,
+		}
+	}
+
+	// Screen capture query
+	captureNames := monCfg.ProcessNamesForGroup("screen_capture")
+	if len(captureNames) > 0 {
+		var nameList []string
+		for _, n := range captureNames {
+			nameList = append(nameList, fmt.Sprintf("'%s'", n))
+		}
+		schedule["screen_capture_detect"] = map[string]interface{}{
+			"query": fmt.Sprintf(
+				"SELECT pid, path, name, cmdline FROM processes WHERE name IN (%s);",
+				strings.Join(nameList, ",")),
+			"interval": 30,
+		}
+	}
+
+	// Removable drive copy query (from monitored paths)
+	removablePaths := monCfg.PathsForType("removable")
+	if len(removablePaths) > 0 {
+		var pathLikes []string
+		for _, p := range removablePaths {
+			// Convert glob pattern to SQL LIKE: "E:\%%" -> "E:\%"
+			sqlPath := strings.ReplaceAll(p, "%%", "%")
+			pathLikes = append(pathLikes, fmt.Sprintf("target_path LIKE '%s'", sqlPath))
+		}
+		schedule["removable_drive_file_copy"] = map[string]interface{}{
+			"query": fmt.Sprintf(
+				"SELECT target_path, action, time, md5, sha256 FROM file_events WHERE (%s) AND action IN ('CREATED','UPDATED');",
+				strings.Join(pathLikes, " OR ")),
+			"interval": 15,
+			"removed":  false,
+		}
+	}
+
+	// Network share copy query
+	schedule["network_share_copy"] = map[string]interface{}{
+		"query":    "SELECT target_path, action, time, md5 FROM file_events WHERE target_path LIKE '\\\\\\\\%' AND action IN ('CREATED','UPDATED');",
+		"interval": 30,
+		"removed":  false,
+	}
+
+	// Print job query
+	schedule["print_jobs"] = map[string]interface{}{
+		"query":    "SELECT pof.pid, p.name, p.path, pof.path AS spool_file FROM process_open_files pof JOIN processes p ON pof.pid = p.pid WHERE p.name = 'spoolsv.exe' AND pof.path LIKE '%.SPL';",
+		"interval": 30,
+	}
+
+	// Build file_paths from DB
+	filePaths := make(map[string][]string)
+	for _, p := range monCfg.Paths {
+		filePaths["monitored_"+p.PathType] = append(filePaths["monitored_"+p.PathType], p.PathPattern)
+	}
+
+	return map[string]interface{}{
+		"schedule":     schedule,
+		"file_paths":   filePaths,
+		"node_invalid": false,
+	}
 }
 
 // SearchEvents handles GET /api/events/search

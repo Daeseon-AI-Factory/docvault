@@ -23,8 +23,21 @@ type OsqueryBatch struct {
 	Results []OsqueryResult `json:"results"`
 }
 
+// ExtensionDisguiseChecker is an interface for checking extension disguise rules.
+// This decouples the endpoint package from the monitoring package.
+type ExtensionDisguiseChecker interface {
+	IsDisguise(oldExt, newExt string) bool
+	GetExtensionCategory(ext string) string
+}
+
 // NormalizeOsqueryEvents converts osquery results into EndpointEvents.
+// disguiseChecker is optional — if nil, hardcoded fallback is used.
 func NormalizeOsqueryEvents(batch *OsqueryBatch, hostnameUserMap map[string]int64) []*EndpointEvent {
+	return NormalizeOsqueryEventsWithChecker(batch, hostnameUserMap, nil)
+}
+
+// NormalizeOsqueryEventsWithChecker normalizes osquery events using a configurable disguise checker.
+func NormalizeOsqueryEventsWithChecker(batch *OsqueryBatch, hostnameUserMap map[string]int64, checker ExtensionDisguiseChecker) []*EndpointEvent {
 	events := make([]*EndpointEvent, 0, len(batch.Results))
 
 	for _, result := range batch.Results {
@@ -50,7 +63,7 @@ func NormalizeOsqueryEvents(batch *OsqueryBatch, hostnameUserMap map[string]int6
 		// For rename events, check if extension was changed (disguise detection)
 		if result.Name == "extension_rename_detect" || result.Name == "file_events" {
 			if result.Action == "MOVED" || result.Action == "RENAMED" {
-				if isExtensionChanged(result.Columns) {
+				if isExtensionChangedWithChecker(result.Columns, checker) {
 					event.EventType = EventExtChanged
 				}
 			}
@@ -82,7 +95,7 @@ func mapOsqueryAction(queryName, action string, columns map[string]string) Event
 	case "process_events":
 		return EventProcessExec
 
-	// --- Monitoring queries ---
+	// --- Monitoring queries (names match osquery.conf schedule keys) ---
 
 	case "messenger_file_access":
 		return EventMessengerFile
@@ -115,7 +128,6 @@ func mapOsqueryAction(queryName, action string, columns map[string]string) Event
 
 // extractFileName gets the most meaningful file name from osquery columns.
 func extractFileName(result OsqueryResult) string {
-	// Different queries store the file path in different columns
 	for _, key := range []string{"target_path", "accessed_file", "spool_file", "path"} {
 		if v := result.Columns[key]; v != "" {
 			return filepath.Base(v)
@@ -142,33 +154,67 @@ func extractProcessName(result OsqueryResult) string {
 	if v := result.Columns["process"]; v != "" {
 		return v
 	}
-	// For process_events, extract from path
 	if v := result.Columns["path"]; v != "" && result.Name == "process_events" {
 		return filepath.Base(v)
 	}
 	return ""
 }
 
-// isExtensionChanged checks if a file rename resulted in an extension change.
-// This is a key indicator of disguise attempts (e.g., secret.dwg → vacation.jpg).
+// isExtensionChangedWithChecker uses the configurable checker if available.
+func isExtensionChangedWithChecker(columns map[string]string, checker ExtensionDisguiseChecker) bool {
+	targetPath := columns["target_path"]
+	if targetPath == "" {
+		return false
+	}
+
+	newExt := strings.ToLower(filepath.Ext(targetPath))
+
+	// If we have old_path, use the checker (DB-based or fallback)
+	if oldPath := columns["old_path"]; oldPath != "" {
+		oldExt := strings.ToLower(filepath.Ext(oldPath))
+		if oldExt == newExt {
+			return false // same extension, not a disguise
+		}
+		if checker != nil {
+			return checker.IsDisguise(oldExt, newExt)
+		}
+		// Fallback: hardcoded check
+		return isExtensionChangedFallback(columns)
+	}
+
+	// No old_path: use md5-based heuristic
+	if columns["md5"] != "" {
+		if checker != nil {
+			// If the new extension is not in any sensitive category, it might be a disguise
+			cat := checker.GetExtensionCategory(newExt)
+			return cat == "" // file with hash but non-sensitive extension = suspicious
+		}
+		return isExtensionChangedFallback(columns)
+	}
+
+	return false
+}
+
+// isExtensionChangedFallback is the hardcoded fallback used when DB config is unavailable.
+func isExtensionChangedFallback(columns map[string]string) bool {
+	return isExtensionChanged(columns)
+}
+
+// isExtensionChanged checks if a file rename resulted in an extension change (fallback).
 func isExtensionChanged(columns map[string]string) bool {
 	targetPath := columns["target_path"]
 	if targetPath == "" {
 		return false
 	}
 
-	// osquery file_events for MOVED may include old_path or we infer from md5 match
-	// For now, we flag any rename involving suspicious extension combinations
 	ext := strings.ToLower(filepath.Ext(targetPath))
 
-	// Documents disguised as images/media
 	suspiciousExts := map[string]bool{
 		".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".bmp": true,
 		".mp3": true, ".mp4": true, ".avi": true, ".mkv": true,
 		".tmp": true, ".dat": true, ".log": true,
 	}
 
-	// Engineering/document extensions (the real content we care about)
 	docExts := map[string]bool{
 		".dwg": true, ".dxf": true, ".stp": true, ".step": true,
 		".igs": true, ".iges": true, ".pdf": true,
@@ -176,25 +222,36 @@ func isExtensionChanged(columns map[string]string) bool {
 		".ppt": true, ".pptx": true, ".csv": true, ".bom": true,
 	}
 
-	// If md5 column exists and target has suspicious ext, flag it
-	// (file content hash doesn't change when just renaming)
 	if columns["md5"] != "" && suspiciousExts[ext] {
 		return true
 	}
 
-	// If the file was renamed and the old name had a doc extension but new doesn't
 	if oldPath := columns["old_path"]; oldPath != "" {
 		oldExt := strings.ToLower(filepath.Ext(oldPath))
 		newExt := ext
 		if docExts[oldExt] && !docExts[newExt] {
-			return true // Document disguised as something else
+			return true
 		}
 	}
 
 	return false
 }
 
-// Messenger process names for cross-referencing
+// IsMessengerProcess checks if a process name belongs to a known messenger.
+// Fallback for when DB config is not available.
+func IsMessengerProcess(processName string) (string, bool) {
+	name, ok := messengerProcesses[strings.ToLower(processName)]
+	return name, ok
+}
+
+// IsEmailProcess checks if a process name belongs to a known email client.
+// Fallback for when DB config is not available.
+func IsEmailProcess(processName string) (string, bool) {
+	name, ok := emailProcesses[strings.ToLower(processName)]
+	return name, ok
+}
+
+// Fallback maps — used only when DB config is unavailable.
 var messengerProcesses = map[string]string{
 	"kakaotalk.exe": "KakaoTalk",
 	"telegram.exe":  "Telegram",
@@ -206,21 +263,8 @@ var messengerProcesses = map[string]string{
 	"ms-teams.exe":  "Microsoft Teams",
 }
 
-// EmailProcesses for cross-referencing
 var emailProcesses = map[string]string{
 	"outlook.exe":     "Outlook",
 	"thunderbird.exe": "Thunderbird",
 	"mailmaster.exe":  "MailMaster",
-}
-
-// IsMessengerProcess checks if a process name belongs to a known messenger.
-func IsMessengerProcess(processName string) (string, bool) {
-	name, ok := messengerProcesses[strings.ToLower(processName)]
-	return name, ok
-}
-
-// IsEmailProcess checks if a process name belongs to a known email client.
-func IsEmailProcess(processName string) (string, bool) {
-	name, ok := emailProcesses[strings.ToLower(processName)]
-	return name, ok
 }

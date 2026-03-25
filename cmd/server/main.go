@@ -18,6 +18,7 @@ import (
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/endpoint"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/folder"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/vault"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/web"
 )
@@ -134,9 +135,14 @@ func run(logger *slog.Logger) error {
 	alertEngine := alert.NewEngine(alertRepo, alertNotifier, logger)
 	alertHandler := alert.NewHandler(alertRepo, logger)
 
+	// Monitoring config (DB-based, replaces all hardcoded process/extension lists)
+	monCfgRepo := monitoring.NewRepository(pool)
+	alertEngine.SetMonitoringConfig(monCfgRepo)
+
 	// Endpoint dependencies (alert engine wired in for real-time evaluation)
 	endpointRepo := endpoint.NewRepository(pool)
 	endpointHandler := endpoint.NewHandler(endpointRepo, pool, cfg.OsqueryPSK, alertEngine, logger)
+	endpointHandler.SetMonitoringConfig(monCfgRepo)
 
 	// Page handler (HTML templates)
 	pageHandler, err := web.NewPageHandler(web.PageHandlerDeps{

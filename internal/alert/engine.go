@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/endpoint"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
 )
 
 // RuleCondition defines what triggers an alert.
@@ -24,13 +25,19 @@ type RuleCondition struct {
 
 // Engine evaluates incoming events against active alert rules.
 type Engine struct {
-	repo     *Repository
-	notifier *Notifier
-	logger   *slog.Logger
+	repo       *Repository
+	notifier   *Notifier
+	monCfgRepo *monitoring.Repository
+	logger     *slog.Logger
 }
 
 func NewEngine(repo *Repository, notifier *Notifier, logger *slog.Logger) *Engine {
 	return &Engine{repo: repo, notifier: notifier, logger: logger}
+}
+
+// SetMonitoringConfig sets the monitoring config repository for DB-based lookups.
+func (e *Engine) SetMonitoringConfig(monCfgRepo *monitoring.Repository) {
+	e.monCfgRepo = monCfgRepo
 }
 
 // Evaluate checks an endpoint event against all active rules and fires alerts.
@@ -39,6 +46,12 @@ func (e *Engine) Evaluate(ctx context.Context, event *endpoint.EndpointEvent) {
 	if err != nil {
 		e.logger.Error("alert engine: list rules", "error", err)
 		return
+	}
+
+	// Load monitoring config from DB (with caching)
+	var monCfg *monitoring.Config
+	if e.monCfgRepo != nil {
+		monCfg, _ = e.monCfgRepo.Get(ctx)
 	}
 
 	for _, rule := range rules {
@@ -52,7 +65,7 @@ func (e *Engine) Evaluate(ctx context.Context, event *endpoint.EndpointEvent) {
 			continue
 		}
 
-		if !matchesCondition(&cond, event) {
+		if !matchesConditionWithConfig(&cond, event, monCfg) {
 			continue
 		}
 
@@ -110,6 +123,59 @@ func matchesEventType(ruleType, eventType string) bool {
 	return false
 }
 
+func matchesConditionWithConfig(cond *RuleCondition, event *endpoint.EndpointEvent, cfg *monitoring.Config) bool {
+	if cond.FileNameContains != "" {
+		if !strings.Contains(strings.ToLower(event.FileName), strings.ToLower(cond.FileNameContains)) {
+			return false
+		}
+	}
+
+	if len(cond.FileExtensions) > 0 {
+		ext := strings.ToLower(filepath.Ext(event.FileName))
+		matched := false
+		for _, e := range cond.FileExtensions {
+			if strings.ToLower(e) == ext {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	if cond.ProcessName != "" {
+		if !strings.EqualFold(event.ProcessName, cond.ProcessName) {
+			return false
+		}
+	}
+
+	if cond.ProcessGroup != "" {
+		if !matchesProcessGroupWithConfig(cond.ProcessGroup, event.ProcessName, cfg) {
+			return false
+		}
+	}
+
+	if cond.PathContains != "" {
+		if !strings.Contains(strings.ToLower(event.FilePath), strings.ToLower(cond.PathContains)) {
+			return false
+		}
+	}
+
+	if cond.MinContentSize > 0 && event.Detail != nil {
+		var detail map[string]interface{}
+		if err := json.Unmarshal(event.Detail, &detail); err == nil {
+			if size, ok := detail["content_size"].(float64); ok {
+				if int(size) < cond.MinContentSize {
+					return false
+				}
+			}
+		}
+	}
+
+	return true
+}
+
 func matchesCondition(cond *RuleCondition, event *endpoint.EndpointEvent) bool {
 	if cond.FileNameContains != "" {
 		if !strings.Contains(strings.ToLower(event.FileName), strings.ToLower(cond.FileNameContains)) {
@@ -165,7 +231,20 @@ func matchesCondition(cond *RuleCondition, event *endpoint.EndpointEvent) bool {
 }
 
 // matchesProcessGroup checks if a process belongs to a named group.
+// Uses DB config if available, falls back to hardcoded lists.
 func matchesProcessGroup(group, processName string) bool {
+	return matchesProcessGroupFallback(group, processName)
+}
+
+// matchesProcessGroupWithConfig uses the monitoring config from DB.
+func matchesProcessGroupWithConfig(group, processName string, cfg *monitoring.Config) bool {
+	if cfg != nil {
+		return cfg.IsInProcessGroup(group, processName)
+	}
+	return matchesProcessGroupFallback(group, processName)
+}
+
+func matchesProcessGroupFallback(group, processName string) bool {
 	pLower := strings.ToLower(processName)
 	switch strings.ToLower(group) {
 	case "messenger":
