@@ -156,10 +156,23 @@ func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		ActiveAlerts int
 	}
 
+	// Query suspicious events from last 24h
+	suspiciousTypes := []endpoint.EventType{
+		endpoint.EventMessengerFile, endpoint.EventEmailAttach, endpoint.EventExtChanged,
+		endpoint.EventUSBCopy, endpoint.EventCloudUpload, endpoint.EventScreenCapture,
+		endpoint.EventNetShareCopy,
+	}
+	var suspiciousEvents []*endpoint.EndpointEvent
+	for _, et := range suspiciousTypes {
+		evts, _ := h.endpointRepo.SearchByType(r.Context(), et, 10)
+		suspiciousEvents = append(suspiciousEvents, evts...)
+	}
+
 	data := h.pageData(r, "Dashboard", "dashboard")
 	data["Stats"] = dashStats{stats.TotalEvents, stats.TodayEvents, 0, len(alerts)}
 	data["RecentLogs"] = recentLogs
 	data["Alerts"] = alerts
+	data["SuspiciousEvents"] = suspiciousEvents
 	renderPage(w, h.tc, "dashboard.html", data)
 }
 

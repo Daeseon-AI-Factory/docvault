@@ -26,17 +26,29 @@ var (
 
 	kernel32       = windows.NewLazySystemDLL("kernel32.dll")
 	procGlobalSize = kernel32.NewProc("GlobalSize")
+
+	procIsClipboardFormatAvailable = user32.NewProc("IsClipboardFormatAvailable")
+	procGetWindowThreadProcessId   = user32.NewProc("GetWindowThreadProcessId")
+
+	psapi                  = windows.NewLazySystemDLL("psapi.dll")
+	procGetModuleBaseNameW = psapi.NewProc("GetModuleBaseNameW")
 )
 
-const cfUnicodeText = 13
+const (
+	cfUnicodeText = 13
+	cfHDROP       = 15  // file list
+	cfBitmap      = 2   // bitmap image
+	cfDIB         = 8   // device-independent bitmap
+)
 
 type ClipboardEvent struct {
 	Hostname    string `json:"hostname"`
 	Username    string `json:"username"`
-	Action      string `json:"action"`
-	Application string `json:"application"`
-	ContentType string `json:"content_type"`
+	Action      string `json:"action"`       // "copy" or "paste"
+	Application string `json:"application"`   // source app (copy) or dest app (paste)
+	ContentType string `json:"content_type"`  // "text", "files", "image"
 	ContentSize int    `json:"content_size"`
+	WindowTitle string `json:"window_title"`  // full window title for context
 	Timestamp   string `json:"timestamp"`
 }
 
@@ -174,7 +186,9 @@ func runMonitor() {
 	signal.Notify(quit, os.Interrupt)
 
 	var lastSeq uint32
-	ticker := time.NewTicker(1 * time.Second)
+	var lastCopyApp string      // track which app did the copy
+	var lastCopySize int        // size of last copy
+	ticker := time.NewTicker(500 * time.Millisecond) // check more frequently
 	defer ticker.Stop()
 
 	for {
@@ -189,24 +203,36 @@ func runMonitor() {
 			}
 			lastSeq = seq
 
-			contentSize := getClipboardContentSize()
+			contentType, contentSize := getClipboardContent()
 			if contentSize == 0 {
 				continue
 			}
 
-			fgApp := getForegroundWindowTitle()
+			fgTitle := getForegroundWindowTitle()
+			fgApp := getProcessNameFromWindow()
+
+			// This is a copy event (clipboard content changed while app is in foreground)
+			lastCopyApp = fgApp
+			lastCopySize = contentSize
 
 			event := ClipboardEvent{
 				Hostname:    hostname,
 				Username:    username,
 				Action:      "copy",
 				Application: fgApp,
-				ContentType: "text",
+				ContentType: contentType,
 				ContentSize: contentSize,
+				WindowTitle: fgTitle,
 				Timestamp:   time.Now().UTC().Format(time.RFC3339),
 			}
 
 			go sendEvent(client, serverURL, psk, &event)
+
+			// If copy happened in one app and user switches to another,
+			// we'll detect paste by monitoring Ctrl+V in the next iteration.
+			// For now, track paste via the next clipboard-consuming app.
+			_ = lastCopyApp
+			_ = lastCopySize
 		}
 	}
 }
@@ -261,6 +287,73 @@ func getClipboardContentSize() int {
 
 	size, _, _ := procGlobalSize.Call(data)
 	return int(size)
+}
+
+// getClipboardContent detects the clipboard content type and size.
+func getClipboardContent() (contentType string, contentSize int) {
+	ret, _, _ := procOpenClipboard.Call(0)
+	if ret == 0 {
+		return "unknown", 0
+	}
+	defer procCloseClipboard.Call()
+
+	// Check for file list first (drag-drop / copy files)
+	if r, _, _ := procIsClipboardFormatAvailable.Call(uintptr(cfHDROP)); r != 0 {
+		data, _, _ := procGetClipboardData.Call(uintptr(cfHDROP))
+		if data != 0 {
+			size, _, _ := procGlobalSize.Call(data)
+			return "files", int(size)
+		}
+	}
+
+	// Check for images
+	if r, _, _ := procIsClipboardFormatAvailable.Call(uintptr(cfDIB)); r != 0 {
+		data, _, _ := procGetClipboardData.Call(uintptr(cfDIB))
+		if data != 0 {
+			size, _, _ := procGlobalSize.Call(data)
+			return "image", int(size)
+		}
+	}
+
+	// Fall back to text
+	data, _, _ := procGetClipboardData.Call(uintptr(cfUnicodeText))
+	if data == 0 {
+		return "unknown", 0
+	}
+	size, _, _ := procGlobalSize.Call(data)
+	return "text", int(size)
+}
+
+// getProcessNameFromWindow returns the executable name of the foreground window's process.
+func getProcessNameFromWindow() string {
+	hwnd, _, _ := procGetForegroundWindow.Call()
+	if hwnd == 0 {
+		return "unknown"
+	}
+
+	var pid uint32
+	procGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+	if pid == 0 {
+		return "unknown"
+	}
+
+	handle, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, pid)
+	if err != nil {
+		return "unknown"
+	}
+	defer windows.CloseHandle(handle)
+
+	buf := make([]uint16, 260)
+	n, _, _ := procGetModuleBaseNameW.Call(
+		uintptr(handle),
+		0,
+		uintptr(unsafe.Pointer(&buf[0])),
+		260,
+	)
+	if n == 0 {
+		return "unknown"
+	}
+	return windows.UTF16ToString(buf[:n])
 }
 
 func getForegroundWindowTitle() string {

@@ -9,10 +9,11 @@ import (
 type ClipboardEvent struct {
 	Hostname    string `json:"hostname"`
 	Username    string `json:"username"`
-	Action      string `json:"action"` // "copy" or "paste"
-	Application string `json:"application"`
-	ContentType string `json:"content_type"`
+	Action      string `json:"action"`       // "copy" or "paste"
+	Application string `json:"application"`   // process name (e.g., "KakaoTalk.exe")
+	ContentType string `json:"content_type"`  // "text", "files", "image"
 	ContentSize int    `json:"content_size"`
+	WindowTitle string `json:"window_title"`  // full window title for context
 	Timestamp   string `json:"timestamp"`
 }
 
@@ -44,6 +45,7 @@ func NormalizeClipboardEvent(ce *ClipboardEvent, hostnameUserMap map[string]int6
 		"content_type": ce.ContentType,
 		"content_size": ce.ContentSize,
 		"application":  ce.Application,
+		"window_title": ce.WindowTitle,
 	}
 	if d, err := json.Marshal(detail); err == nil {
 		event.Detail = d

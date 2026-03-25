@@ -18,6 +18,38 @@
   </div>
 </div>
 
+{{if .SuspiciousEvents}}
+<div class="card" style="border-color:#dc3545;margin-bottom:1rem;">
+  <div class="card-header" style="color:#dc3545;">Suspicious Activity (Last 24h)</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Time</th><th>User</th><th>Type</th><th>File</th><th>Process</th><th>Host</th></tr></thead>
+      <tbody>
+        {{range .SuspiciousEvents}}
+        <tr>
+          <td class="text-muted">{{.EventTime.Format "15:04:05"}}</td>
+          <td>{{if .UserID}}User #{{printf "%d" .UserID}}{{else}}-{{end}}</td>
+          <td>
+            {{if eq (printf "%s" .EventType) "messenger_file"}}<span class="badge badge-danger">Messenger</span>
+            {{else if eq (printf "%s" .EventType) "email_attach"}}<span class="badge badge-warning">Email</span>
+            {{else if eq (printf "%s" .EventType) "extension_changed"}}<span class="badge badge-danger">Ext Changed</span>
+            {{else if eq (printf "%s" .EventType) "usb_copy"}}<span class="badge badge-warning">USB Copy</span>
+            {{else if eq (printf "%s" .EventType) "cloud_upload"}}<span class="badge badge-warning">Cloud Upload</span>
+            {{else if eq (printf "%s" .EventType) "screen_capture"}}<span class="badge badge-info">Screenshot</span>
+            {{else if eq (printf "%s" .EventType) "netshare_copy"}}<span class="badge badge-info">NetShare</span>
+            {{else}}<span class="badge badge-secondary">{{.EventType}}</span>{{end}}
+          </td>
+          <td>{{.FileName}}</td>
+          <td>{{.ProcessName}}</td>
+          <td>{{.Hostname}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}
+
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
   <div class="card">
     <div class="card-header">Recent Activity</div>

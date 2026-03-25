@@ -78,6 +78,9 @@ func TestNormalizeOsqueryEvents(t *testing.T) {
 	if e.Source != "osquery" {
 		t.Errorf("event[0] source = %s", e.Source)
 	}
+	if e.FileName != "design.dwg" {
+		t.Errorf("event[0] file_name = %s, want design.dwg", e.FileName)
+	}
 
 	// Event 2: file delete
 	if events[1].EventType != EventFileDelete {
@@ -111,12 +114,21 @@ func TestMapOsqueryAction(t *testing.T) {
 		{"file_events", "ACCESSED", EventFileOpen},
 		{"usb_devices", "added", EventUSBMount},
 		{"process_events", "exec", EventProcessExec},
+		// New monitoring queries
+		{"messenger_file_access", "added", EventMessengerFile},
+		{"email_file_access", "added", EventEmailAttach},
+		{"cloud_upload_access", "added", EventCloudUpload},
+		{"removable_drive_file_copy", "added", EventUSBCopy},
+		{"network_share_copy", "added", EventNetShareCopy},
+		{"print_jobs", "added", EventPrintJob},
+		{"screen_capture_detect", "added", EventScreenCapture},
+		{"extension_rename_detect", "added", EventFileRename},
 		{"unknown_query", "something", EventType("unknown_query.something")},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.query+"/"+tt.action, func(t *testing.T) {
-			got := mapOsqueryAction(tt.query, tt.action)
+			got := mapOsqueryAction(tt.query, tt.action, nil)
 			if got != tt.want {
 				t.Errorf("mapOsqueryAction(%s, %s) = %s, want %s", tt.query, tt.action, got, tt.want)
 			}
@@ -129,5 +141,186 @@ func TestNormalizeOsqueryEventsEmptyBatch(t *testing.T) {
 	events := NormalizeOsqueryEvents(batch, nil)
 	if len(events) != 0 {
 		t.Errorf("empty batch should produce 0 events, got %d", len(events))
+	}
+}
+
+func TestNormalizeMessengerFileAccess(t *testing.T) {
+	batch := &OsqueryBatch{
+		Results: []OsqueryResult{
+			{
+				Name:           "messenger_file_access",
+				HostIdentifier: "PC-DESIGN-001",
+				UnixTime:       1700000100,
+				Action:         "added",
+				Columns: map[string]string{
+					"name":          "KakaoTalk.exe",
+					"accessed_file": "D:\\Engineering\\designs\\motor_assembly.dwg",
+					"pid":           "12345",
+				},
+			},
+		},
+	}
+
+	hostnameMap := map[string]int64{"PC-DESIGN-001": 10}
+	events := NormalizeOsqueryEvents(batch, hostnameMap)
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+
+	e := events[0]
+	if e.EventType != EventMessengerFile {
+		t.Errorf("type = %s, want %s", e.EventType, EventMessengerFile)
+	}
+	if e.ProcessName != "KakaoTalk.exe" {
+		t.Errorf("process = %s, want KakaoTalk.exe", e.ProcessName)
+	}
+	if e.FileName != "motor_assembly.dwg" {
+		t.Errorf("file_name = %s, want motor_assembly.dwg", e.FileName)
+	}
+	if e.FilePath != "D:\\Engineering\\designs\\motor_assembly.dwg" {
+		t.Errorf("file_path = %s", e.FilePath)
+	}
+}
+
+func TestNormalizeUSBCopy(t *testing.T) {
+	batch := &OsqueryBatch{
+		Results: []OsqueryResult{
+			{
+				Name:           "removable_drive_file_copy",
+				HostIdentifier: "PC-ENG-003",
+				UnixTime:       1700000200,
+				Action:         "added",
+				Columns: map[string]string{
+					"target_path": "F:\\backup\\secret_specs.pdf",
+					"md5":         "abc123",
+				},
+			},
+		},
+	}
+
+	events := NormalizeOsqueryEvents(batch, nil)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].EventType != EventUSBCopy {
+		t.Errorf("type = %s, want %s", events[0].EventType, EventUSBCopy)
+	}
+	if events[0].FileName != "secret_specs.pdf" {
+		t.Errorf("file_name = %s", events[0].FileName)
+	}
+}
+
+func TestExtensionChangeDetection(t *testing.T) {
+	batch := &OsqueryBatch{
+		Results: []OsqueryResult{
+			{
+				Name:           "file_events",
+				HostIdentifier: "PC-ENG-001",
+				UnixTime:       1700000300,
+				Action:         "MOVED",
+				Columns: map[string]string{
+					"target_path": "C:\\Users\\kim\\Desktop\\vacation.jpg",
+					"old_path":    "C:\\Users\\kim\\Desktop\\secret_design.dwg",
+					"md5":         "abc123def456",
+				},
+			},
+		},
+	}
+
+	events := NormalizeOsqueryEvents(batch, nil)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].EventType != EventExtChanged {
+		t.Errorf("type = %s, want %s (extension disguise should be detected)", events[0].EventType, EventExtChanged)
+	}
+}
+
+func TestIsExtensionChanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		columns map[string]string
+		want    bool
+	}{
+		{
+			name:    "doc to image disguise",
+			columns: map[string]string{"target_path": "photo.jpg", "old_path": "secret.dwg"},
+			want:    true,
+		},
+		{
+			name:    "doc to doc rename (ok)",
+			columns: map[string]string{"target_path": "design_v2.dwg", "old_path": "design_v1.dwg"},
+			want:    false,
+		},
+		{
+			name:    "suspicious ext with md5",
+			columns: map[string]string{"target_path": "notes.tmp", "md5": "abc123"},
+			want:    true,
+		},
+		{
+			name:    "no target path",
+			columns: map[string]string{},
+			want:    false,
+		},
+		{
+			name:    "xlsx to mp3 disguise",
+			columns: map[string]string{"target_path": "song.mp3", "old_path": "financials.xlsx"},
+			want:    true,
+		},
+		{
+			name:    "normal image rename",
+			columns: map[string]string{"target_path": "photo2.jpg", "old_path": "photo1.jpg"},
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isExtensionChanged(tt.columns)
+			if got != tt.want {
+				t.Errorf("isExtensionChanged = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsMessengerProcess(t *testing.T) {
+	tests := []struct {
+		process string
+		want    bool
+	}{
+		{"kakaotalk.exe", true},
+		{"KakaoTalk.exe", true},
+		{"telegram.exe", true},
+		{"slack.exe", true},
+		{"discord.exe", true},
+		{"teams.exe", true},
+		{"notepad.exe", false},
+		{"explorer.exe", false},
+	}
+	for _, tt := range tests {
+		_, got := IsMessengerProcess(tt.process)
+		if got != tt.want {
+			t.Errorf("IsMessengerProcess(%s) = %v, want %v", tt.process, got, tt.want)
+		}
+	}
+}
+
+func TestIsEmailProcess(t *testing.T) {
+	tests := []struct {
+		process string
+		want    bool
+	}{
+		{"outlook.exe", true},
+		{"OUTLOOK.EXE", true},
+		{"thunderbird.exe", true},
+		{"chrome.exe", false},
+	}
+	for _, tt := range tests {
+		_, got := IsEmailProcess(tt.process)
+		if got != tt.want {
+			t.Errorf("IsEmailProcess(%s) = %v, want %v", tt.process, got, tt.want)
+		}
 	}
 }

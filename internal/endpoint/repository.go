@@ -146,6 +146,35 @@ func (r *Repository) Search(ctx context.Context, params SearchParams) ([]*Endpoi
 	return events, rows.Err()
 }
 
+// SearchByType returns recent events of a specific type from the last 24 hours.
+func (r *Repository) SearchByType(ctx context.Context, eventType EventType, limit int) ([]*EndpointEvent, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := r.db.Query(ctx,
+		`SELECT id, user_id, hostname, event_type, file_name, file_path, process_name, detail, source, event_time, received_at
+		 FROM endpoint_events
+		 WHERE event_type = $1 AND event_time >= NOW() - INTERVAL '24 hours'
+		 ORDER BY event_time DESC LIMIT $2`,
+		eventType, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("search by type %s: %w", eventType, err)
+	}
+	defer rows.Close()
+
+	var events []*EndpointEvent
+	for rows.Next() {
+		var e EndpointEvent
+		if err := rows.Scan(&e.ID, &e.UserID, &e.Hostname, &e.EventType, &e.FileName, &e.FilePath,
+			&e.ProcessName, &e.Detail, &e.Source, &e.EventTime, &e.ReceivedAt); err != nil {
+			return nil, fmt.Errorf("scan endpoint event: %w", err)
+		}
+		events = append(events, &e)
+	}
+	return events, rows.Err()
+}
+
 // UnifiedTimeline merges audit_logs and endpoint_events for a user.
 type TimelineEntry struct {
 	Timestamp time.Time       `json:"timestamp"`
