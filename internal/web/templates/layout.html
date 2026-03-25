@@ -16,8 +16,9 @@
         <li><a href="/dashboard" {{if eq .Active "dashboard"}}class="active"{{end}}>Dashboard</a></li>
         <li><a href="/files" {{if eq .Active "files"}}class="active"{{end}}>Files</a></li>
 
-        <li class="sidebar-section">Audit</li>
-        <li><a href="/audit/search" {{if eq .Active "audit-search"}}class="active"{{end}}>Audit Search</a></li>
+        <li class="sidebar-section">Monitoring</li>
+        <li><a href="/events/search" {{if eq .Active "events"}}class="active"{{end}}>Endpoint Events</a></li>
+        <li><a href="/audit/search" {{if eq .Active "audit-search"}}class="active"{{end}}>Audit Logs</a></li>
 
         {{if eq .Role "admin"}}
         <li class="sidebar-section">Admin</li>

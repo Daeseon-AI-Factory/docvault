@@ -1,0 +1,105 @@
+{{define "content"}}
+<div class="card mb-2">
+  <div class="card-header">Endpoint Events Search</div>
+  <form method="GET" action="/events/search" class="d-flex gap-1 align-center" style="flex-wrap:wrap;">
+    <div class="form-group" style="margin-bottom:0;">
+      <label>User</label>
+      <select name="user_id" class="form-control">
+        <option value="">All Users</option>
+        {{range .Users}}
+        <option value="{{.ID}}" {{if eq (printf "%d" $.Filter.UserID) (printf "%d" .ID)}}selected{{end}}>{{.FullName}} ({{.Username}})</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>Event Type</label>
+      <select name="event_type" class="form-control">
+        <option value="">All Types</option>
+        <option value="messenger_file" {{if eq $.Filter.EventType "messenger_file"}}selected{{end}}>Messenger File</option>
+        <option value="email_attach" {{if eq $.Filter.EventType "email_attach"}}selected{{end}}>Email Attach</option>
+        <option value="extension_changed" {{if eq $.Filter.EventType "extension_changed"}}selected{{end}}>Extension Changed</option>
+        <option value="usb_copy" {{if eq $.Filter.EventType "usb_copy"}}selected{{end}}>USB Copy</option>
+        <option value="usb_mount" {{if eq $.Filter.EventType "usb_mount"}}selected{{end}}>USB Mount</option>
+        <option value="netshare_copy" {{if eq $.Filter.EventType "netshare_copy"}}selected{{end}}>Network Share Copy</option>
+        <option value="cloud_upload" {{if eq $.Filter.EventType "cloud_upload"}}selected{{end}}>Cloud Upload</option>
+        <option value="clipboard_copy" {{if eq $.Filter.EventType "clipboard_copy"}}selected{{end}}>Clipboard Copy</option>
+        <option value="clipboard_paste" {{if eq $.Filter.EventType "clipboard_paste"}}selected{{end}}>Clipboard Paste</option>
+        <option value="screen_capture" {{if eq $.Filter.EventType "screen_capture"}}selected{{end}}>Screen Capture</option>
+        <option value="print_job" {{if eq $.Filter.EventType "print_job"}}selected{{end}}>Print Job</option>
+        <option value="file_write" {{if eq $.Filter.EventType "file_write"}}selected{{end}}>File Write</option>
+        <option value="file_delete" {{if eq $.Filter.EventType "file_delete"}}selected{{end}}>File Delete</option>
+        <option value="file_rename" {{if eq $.Filter.EventType "file_rename"}}selected{{end}}>File Rename</option>
+        <option value="process_exec" {{if eq $.Filter.EventType "process_exec"}}selected{{end}}>Process Exec</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>File Name</label>
+      <input type="text" name="file_name" class="form-control" value="{{$.Filter.FileName}}" placeholder="Search...">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>From</label>
+      <input type="datetime-local" name="from" class="form-control" value="{{$.Filter.From}}">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>To</label>
+      <input type="datetime-local" name="to" class="form-control" value="{{$.Filter.To}}">
+    </div>
+    <div class="form-group" style="margin-bottom:0;align-self:flex-end;">
+      <button type="submit" class="btn btn-primary">Search</button>
+    </div>
+  </form>
+</div>
+
+<div class="d-flex justify-between align-center mb-1">
+  <span class="text-muted">{{len .Events}} results</span>
+  <a href="/api/events/export?user_id={{$.Filter.UserIDStr}}&event_type={{$.Filter.EventType}}&file_name={{$.Filter.FileName}}&from={{$.Filter.From}}&to={{$.Filter.To}}" class="btn btn-sm btn-outline">Export CSV</a>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>User</th>
+          <th>Type</th>
+          <th>File</th>
+          <th>Process</th>
+          <th>Host</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Events}}
+        <tr>
+          <td class="text-muted">{{.EventTime.Format "2006-01-02 15:04:05"}}</td>
+          <td>
+            {{if .UserID}}<a href="/audit/users/{{printf "%d" .UserID}}">{{printf "%d" .UserID}}</a>{{else}}-{{end}}
+          </td>
+          <td>
+            {{if eq (printf "%s" .EventType) "messenger_file"}}<span class="badge badge-danger">Messenger</span>
+            {{else if eq (printf "%s" .EventType) "email_attach"}}<span class="badge badge-warning">Email</span>
+            {{else if eq (printf "%s" .EventType) "extension_changed"}}<span class="badge badge-danger">Ext Changed</span>
+            {{else if eq (printf "%s" .EventType) "usb_copy"}}<span class="badge badge-warning">USB Copy</span>
+            {{else if eq (printf "%s" .EventType) "usb_mount"}}<span class="badge badge-info">USB Mount</span>
+            {{else if eq (printf "%s" .EventType) "cloud_upload"}}<span class="badge badge-warning">Cloud Upload</span>
+            {{else if eq (printf "%s" .EventType) "clipboard_copy"}}<span class="badge badge-info">Clip Copy</span>
+            {{else if eq (printf "%s" .EventType) "clipboard_paste"}}<span class="badge badge-info">Clip Paste</span>
+            {{else if eq (printf "%s" .EventType) "screen_capture"}}<span class="badge badge-warning">Screenshot</span>
+            {{else if eq (printf "%s" .EventType) "netshare_copy"}}<span class="badge badge-info">NetShare</span>
+            {{else if eq (printf "%s" .EventType) "print_job"}}<span class="badge badge-secondary">Print</span>
+            {{else}}<span class="badge badge-secondary">{{.EventType}}</span>{{end}}
+          </td>
+          <td title="{{.FilePath}}">{{.FileName}}</td>
+          <td>{{.ProcessName}}</td>
+          <td>{{.Hostname}}</td>
+          <td><span class="badge badge-secondary">{{.Source}}</span></td>
+        </tr>
+        {{else}}
+        <tr><td colspan="7" class="text-muted">No events found</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

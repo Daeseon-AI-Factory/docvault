@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -380,6 +381,125 @@ func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
 	data["Agents"] = agents
 	data["PSKConfigured"] = h.pskConfigured
 	renderPage(w, h.tc, "admin_agents.html", data)
+}
+
+func (h *PageHandler) EventsSearchPage(w http.ResponseWriter, r *http.Request) {
+	filter := struct {
+		UserID    int64
+		UserIDStr string
+		EventType string
+		FileName  string
+		From      string
+		To        string
+	}{
+		EventType: r.URL.Query().Get("event_type"),
+		FileName:  r.URL.Query().Get("file_name"),
+		From:      r.URL.Query().Get("from"),
+		To:        r.URL.Query().Get("to"),
+		UserIDStr: r.URL.Query().Get("user_id"),
+	}
+
+	params := endpoint.SearchParams{Limit: 100}
+	if filter.UserIDStr != "" {
+		if id, err := strconv.ParseInt(filter.UserIDStr, 10, 64); err == nil {
+			params.UserID = &id
+			filter.UserID = id
+		}
+	}
+	if filter.EventType != "" {
+		et := endpoint.EventType(filter.EventType)
+		params.EventType = &et
+	}
+	if filter.FileName != "" {
+		params.FileName = &filter.FileName
+	}
+	if filter.From != "" {
+		if t, err := time.Parse("2006-01-02T15:04", filter.From); err == nil {
+			params.From = &t
+		}
+	}
+	if filter.To != "" {
+		if t, err := time.Parse("2006-01-02T15:04", filter.To); err == nil {
+			params.To = &t
+		}
+	}
+
+	events, _ := h.endpointRepo.Search(r.Context(), params)
+	users, _ := h.userRepo.List(r.Context())
+
+	data := h.pageData(r, "Endpoint Events", "events")
+	data["Events"] = events
+	data["Users"] = users
+	data["Filter"] = filter
+	renderPage(w, h.tc, "events_search.html", data)
+}
+
+// ExportEventsCSV handles GET /api/events/export — legal evidence CSV export.
+func (h *PageHandler) ExportEventsCSV(w http.ResponseWriter, r *http.Request) {
+	params := endpoint.SearchParams{Limit: 50000}
+
+	if v := r.URL.Query().Get("user_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			params.UserID = &id
+		}
+	}
+	if v := r.URL.Query().Get("event_type"); v != "" {
+		et := endpoint.EventType(v)
+		params.EventType = &et
+	}
+	if v := r.URL.Query().Get("file_name"); v != "" {
+		params.FileName = &v
+	}
+	if v := r.URL.Query().Get("from"); v != "" {
+		if t, err := time.Parse("2006-01-02T15:04", v); err == nil {
+			params.From = &t
+		}
+	}
+	if v := r.URL.Query().Get("to"); v != "" {
+		if t, err := time.Parse("2006-01-02T15:04", v); err == nil {
+			params.To = &t
+		}
+	}
+
+	events, err := h.endpointRepo.Search(r.Context(), params)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=endpoint_events_export.csv")
+
+	// BOM for Excel Korean compatibility
+	w.Write([]byte{0xEF, 0xBB, 0xBF})
+	w.Write([]byte("일시,사용자ID,이벤트유형,파일명,파일경로,프로세스,호스트명,소스\n"))
+
+	for _, e := range events {
+		userID := ""
+		if e.UserID != nil {
+			userID = strconv.FormatInt(*e.UserID, 10)
+		}
+		line := fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,%s\n",
+			e.EventTime.Format("2006-01-02 15:04:05"),
+			userID,
+			e.EventType,
+			csvEscapeField(e.FileName),
+			csvEscapeField(e.FilePath),
+			e.ProcessName,
+			e.Hostname,
+			e.Source,
+		)
+		w.Write([]byte(line))
+	}
+}
+
+func csvEscapeField(s string) string {
+	for _, c := range s {
+		if c == ',' || c == '"' || c == '\n' || c == '\\' {
+			return "\"" + s + "\""
+		}
+	}
+	return s
 }
 
 // buildBreadcrumbs walks up the folder tree to build navigation breadcrumbs.

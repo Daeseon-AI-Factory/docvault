@@ -1,0 +1,16 @@
+DROP TRIGGER IF EXISTS trg_audit_logs_hash ON audit_logs;
+DROP TRIGGER IF EXISTS trg_endpoint_events_hash ON endpoint_events;
+DROP TRIGGER IF EXISTS trg_audit_logs_no_delete ON audit_logs;
+DROP TRIGGER IF EXISTS trg_audit_logs_no_update ON audit_logs;
+DROP TRIGGER IF EXISTS trg_endpoint_events_no_delete ON endpoint_events;
+DROP TRIGGER IF EXISTS trg_endpoint_events_no_update ON endpoint_events;
+DROP FUNCTION IF EXISTS compute_audit_hash();
+DROP FUNCTION IF EXISTS compute_endpoint_hash();
+DROP FUNCTION IF EXISTS prevent_log_delete();
+DROP FUNCTION IF EXISTS prevent_log_update();
+DROP INDEX IF EXISTS idx_audit_logs_hash;
+DROP INDEX IF EXISTS idx_endpoint_events_hash;
+ALTER TABLE audit_logs DROP COLUMN IF EXISTS row_hash;
+ALTER TABLE audit_logs DROP COLUMN IF EXISTS prev_hash;
+ALTER TABLE endpoint_events DROP COLUMN IF EXISTS row_hash;
+ALTER TABLE endpoint_events DROP COLUMN IF EXISTS prev_hash;

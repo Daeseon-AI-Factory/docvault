@@ -2,6 +2,7 @@ package audit
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -135,6 +136,96 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+// VerifyIntegrity handles GET /api/audit/verify — checks hash chain integrity.
+// Returns whether the audit log chain is intact (for legal evidence certification).
+func (h *Handler) VerifyIntegrity(w http.ResponseWriter, r *http.Request) {
+	tableName := r.URL.Query().Get("table")
+	if tableName != "audit_logs" && tableName != "endpoint_events" {
+		tableName = "audit_logs"
+	}
+
+	result, err := h.repo.VerifyHashChain(r.Context(), tableName)
+	if err != nil {
+		h.logger.Error("verify integrity", "error", err)
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// ExportCSV handles GET /api/audit/export — exports logs as CSV for legal evidence.
+func (h *Handler) ExportCSV(w http.ResponseWriter, r *http.Request) {
+	params := SearchParams{Limit: 10000}
+
+	if v := r.URL.Query().Get("user_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			params.UserID = &id
+		}
+	}
+	if v := r.URL.Query().Get("from"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			params.From = &t
+		}
+	}
+	if v := r.URL.Query().Get("to"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			endOfDay := t.Add(24*time.Hour - time.Second)
+			params.To = &endOfDay
+		}
+	}
+
+	logs, err := h.repo.Search(r.Context(), params)
+	if err != nil {
+		h.logger.Error("export CSV", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=audit_log_export.csv")
+
+	// BOM for Excel Korean compatibility
+	w.Write([]byte{0xEF, 0xBB, 0xBF})
+	w.Write([]byte("일시,사용자ID,행위,대상유형,대상ID,대상명,IP주소,상태코드,해시\n"))
+
+	for _, log := range logs {
+		line := fmt.Sprintf("%s,%d,%s,%s,%s,%s,%s,%d,%s\n",
+			log.CreatedAt.Format("2006-01-02 15:04:05"),
+			log.UserID,
+			log.Action,
+			log.TargetType,
+			formatNullableInt(log.TargetID),
+			csvEscape(log.TargetName),
+			log.IPAddress,
+			log.StatusCode,
+			log.RowHash,
+		)
+		w.Write([]byte(line))
+	}
+}
+
+func csvEscape(s string) string {
+	if s == "" {
+		return ""
+	}
+	// If contains comma or quote, wrap in quotes
+	for _, c := range s {
+		if c == ',' || c == '"' || c == '\n' {
+			return "\"" + s + "\""
+		}
+	}
+	return s
+}
+
+func formatNullableInt(v *int64) string {
+	if v == nil {
+		return ""
+	}
+	return strconv.FormatInt(*v, 10)
 }
 
 func parsePagination(r *http.Request) (int, int) {

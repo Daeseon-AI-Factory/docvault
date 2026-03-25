@@ -150,6 +150,11 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Get("/audit/files/{fileID}", deps.PageHandler.AuditFilePage)
 		r.Get("/audit/search", deps.PageHandler.AuditSearchPage)
 
+		r.Get("/events/search", deps.PageHandler.EventsSearchPage)
+		r.Get("/api/events/export", deps.PageHandler.ExportEventsCSV)
+		r.Get("/api/audit/export", deps.AuditHandler.ExportCSV)
+		r.Get("/api/audit/verify", deps.AuditHandler.VerifyIntegrity)
+
 		r.Get("/admin/users", deps.PageHandler.AdminUsersPage)
 		r.Get("/admin/alerts", deps.PageHandler.AdminAlertsPage)
 		r.Get("/admin/agents", deps.PageHandler.AdminAgentsPage)

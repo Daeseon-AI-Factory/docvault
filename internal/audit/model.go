@@ -37,6 +37,8 @@ type AuditLog struct {
 	UserAgent  string          `json:"user_agent"`
 	StatusCode int             `json:"status_code"`
 	CreatedAt  time.Time       `json:"created_at"`
+	PrevHash   string          `json:"prev_hash,omitempty"`
+	RowHash    string          `json:"row_hash,omitempty"`
 }
 
 type Entry struct {

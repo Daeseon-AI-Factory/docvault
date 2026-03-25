@@ -56,6 +56,7 @@ func newTemplateCache() (*templateCache, error) {
 		"admin_user_edit.html",
 		"admin_alerts.html",
 		"admin_agents.html",
+		"events_search.html",
 	}
 
 	for _, page := range layoutPages {

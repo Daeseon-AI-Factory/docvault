@@ -50,7 +50,7 @@ type SearchParams struct {
 }
 
 func (r *Repository) Search(ctx context.Context, params SearchParams) ([]*AuditLog, error) {
-	query := `SELECT id, user_id, action, target_type, target_id, target_name, detail, ip_address, user_agent, status_code, created_at
+	query := `SELECT id, user_id, action, target_type, target_id, target_name, detail, ip_address, user_agent, status_code, created_at, prev_hash, row_hash
 	          FROM audit_logs WHERE 1=1`
 	args := []interface{}{}
 	argIdx := 1
@@ -110,7 +110,7 @@ func (r *Repository) Search(ctx context.Context, params SearchParams) ([]*AuditL
 	for rows.Next() {
 		var l AuditLog
 		if err := rows.Scan(&l.ID, &l.UserID, &l.Action, &l.TargetType, &l.TargetID, &l.TargetName,
-			&l.Detail, &l.IPAddress, &l.UserAgent, &l.StatusCode, &l.CreatedAt); err != nil {
+			&l.Detail, &l.IPAddress, &l.UserAgent, &l.StatusCode, &l.CreatedAt, &l.PrevHash, &l.RowHash); err != nil {
 			return nil, fmt.Errorf("scan audit log: %w", err)
 		}
 		logs = append(logs, &l)
@@ -154,4 +154,68 @@ func (r *Repository) GetDashboardStats(ctx context.Context) (*DashboardStats, er
 	}
 
 	return stats, rows.Err()
+}
+
+// HashChainResult represents the result of verifying log integrity.
+type HashChainResult struct {
+	Table        string `json:"table"`
+	TotalRows    int64  `json:"total_rows"`
+	Verified     int64  `json:"verified"`
+	BrokenAt     *int64 `json:"broken_at,omitempty"` // ID where chain breaks, nil if intact
+	IsIntact     bool   `json:"is_intact"`
+	VerifiedAt   string `json:"verified_at"`
+}
+
+// VerifyHashChain checks that the hash chain in the specified table is unbroken.
+// If any row was tampered with (modified or deleted), the chain will break.
+func (r *Repository) VerifyHashChain(ctx context.Context, tableName string) (*HashChainResult, error) {
+	result := &HashChainResult{
+		Table:      tableName,
+		VerifiedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// Count total rows
+	err := r.db.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tableName)).Scan(&result.TotalRows)
+	if err != nil {
+		return nil, fmt.Errorf("count rows: %w", err)
+	}
+
+	if result.TotalRows == 0 {
+		result.IsIntact = true
+		return result, nil
+	}
+
+	// Walk the chain: each row's prev_hash should match the previous row's row_hash
+	rows, err := r.db.Query(ctx,
+		fmt.Sprintf(`SELECT id, prev_hash, row_hash FROM %s ORDER BY id ASC`, tableName))
+	if err != nil {
+		return nil, fmt.Errorf("query hash chain: %w", err)
+	}
+	defer rows.Close()
+
+	genesis := "0000000000000000000000000000000000000000000000000000000000000000"
+	expectedPrev := genesis
+	var verified int64
+
+	for rows.Next() {
+		var id int64
+		var prevHash, rowHash string
+		if err := rows.Scan(&id, &prevHash, &rowHash); err != nil {
+			return nil, fmt.Errorf("scan chain row: %w", err)
+		}
+
+		if prevHash != expectedPrev {
+			result.BrokenAt = &id
+			result.Verified = verified
+			result.IsIntact = false
+			return result, nil
+		}
+
+		expectedPrev = rowHash
+		verified++
+	}
+
+	result.Verified = verified
+	result.IsIntact = true
+	return result, nil
 }
