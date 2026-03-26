@@ -15,6 +15,7 @@ import (
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/auth"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/endpoint"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/folder"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/vault"
 )
@@ -28,22 +29,24 @@ type PageHandler struct {
 	userRepo     *user.Repository
 	auditRepo    *audit.Repository
 	endpointRepo *endpoint.Repository
-	alertRepo    *alert.Repository
-	pskConfigured bool
-	logger       *slog.Logger
+	alertRepo      *alert.Repository
+	monitorHandler *monitoring.Handler
+	pskConfigured  bool
+	logger         *slog.Logger
 }
 
 type PageHandlerDeps struct {
-	DB           *pgxpool.Pool
-	JWTSvc       *auth.JWTService
-	VaultRepo    *vault.Repository
-	FolderRepo   *folder.Repository
-	UserRepo     *user.Repository
-	AuditRepo    *audit.Repository
-	EndpointRepo *endpoint.Repository
-	AlertRepo    *alert.Repository
-	PSKConfigured bool
-	Logger       *slog.Logger
+	DB             *pgxpool.Pool
+	JWTSvc         *auth.JWTService
+	VaultRepo      *vault.Repository
+	FolderRepo     *folder.Repository
+	UserRepo       *user.Repository
+	AuditRepo      *audit.Repository
+	EndpointRepo   *endpoint.Repository
+	AlertRepo      *alert.Repository
+	MonitorHandler *monitoring.Handler
+	PSKConfigured  bool
+	Logger         *slog.Logger
 }
 
 func NewPageHandler(deps PageHandlerDeps) (*PageHandler, error) {
@@ -60,8 +63,9 @@ func NewPageHandler(deps PageHandlerDeps) (*PageHandler, error) {
 		userRepo:     deps.UserRepo,
 		auditRepo:    deps.AuditRepo,
 		endpointRepo: deps.EndpointRepo,
-		alertRepo:    deps.AlertRepo,
-		pskConfigured: deps.PSKConfigured,
+		alertRepo:      deps.AlertRepo,
+		monitorHandler: deps.MonitorHandler,
+		pskConfigured:  deps.PSKConfigured,
 		logger:       deps.Logger,
 	}, nil
 }
@@ -500,6 +504,24 @@ func csvEscapeField(s string) string {
 		}
 	}
 	return s
+}
+
+func (h *PageHandler) AdminMonitoringPage(w http.ResponseWriter, r *http.Request) {
+	data := h.pageData(r, "모니터링 설정", "admin-monitoring")
+
+	if h.monitorHandler != nil {
+		summary, err := h.monitorHandler.GetSummary(r.Context())
+		if err != nil {
+			h.logger.Error("admin monitoring page", "error", err)
+		} else {
+			data["Processes"] = summary.Processes
+			data["Extensions"] = summary.Extensions
+			data["Paths"] = summary.Paths
+			data["DisguiseRules"] = summary.DisguiseRules
+		}
+	}
+
+	renderPage(w, h.tc, "admin_monitoring.html", data)
 }
 
 // buildBreadcrumbs walks up the folder tree to build navigation breadcrumbs.

@@ -1,0 +1,174 @@
+{{define "content"}}
+<h2>모니터링 설정 관리</h2>
+<p class="text-muted">프로세스, 확장자, 경로, 확장자 위장 탐지 규칙을 DB에서 관리합니다. 변경 즉시 반영됩니다.</p>
+
+<!-- 감시 프로세스 -->
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header">감시 프로세스 ({{len .Processes}}개)</div>
+  <table class="table">
+    <thead><tr><th>그룹</th><th>프로세스명</th><th>표시명</th><th>상태</th><th>관리</th></tr></thead>
+    <tbody>
+    {{range .Processes}}
+    <tr class="{{if not .IsActive}}text-muted{{end}}">
+      <td><span class="badge badge-{{.GroupName}}">{{.GroupName}}</span></td>
+      <td><code>{{.ProcessName}}</code></td>
+      <td>{{.DisplayName}}</td>
+      <td>{{if .IsActive}}활성{{else}}비활성{{end}}</td>
+      <td>
+        <form method="POST" action="/admin/monitoring/processes/{{.ID}}/toggle" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn btn-sm btn-outline">{{if .IsActive}}비활성화{{else}}활성화{{end}}</button>
+        </form>
+        <form method="POST" action="/admin/monitoring/processes/{{.ID}}/delete" style="display:inline;"
+              onsubmit="return confirm('정말 삭제하시겠습니까?');">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  <div style="padding:1rem;">
+    <h4>프로세스 추가</h4>
+    <form method="POST" action="/admin/monitoring/processes/add" class="d-flex gap-1" style="flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <select name="group_name" class="form-control" style="width:auto;" required>
+        <option value="messenger">messenger</option>
+        <option value="email">email</option>
+        <option value="browser">browser</option>
+        <option value="screen_capture">screen_capture</option>
+      </select>
+      <input type="text" name="process_name" placeholder="예: NateOn.exe" class="form-control" style="width:200px;" required>
+      <input type="text" name="display_name" placeholder="예: 네이트온" class="form-control" style="width:200px;" required>
+      <button type="submit" class="btn btn-primary">추가</button>
+    </form>
+  </div>
+</div>
+
+<!-- 감시 확장자 -->
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header">감시 확장자 ({{len .Extensions}}개)</div>
+  <table class="table">
+    <thead><tr><th>카테고리</th><th>확장자</th><th>설명</th><th>민감</th><th>상태</th><th>관리</th></tr></thead>
+    <tbody>
+    {{range .Extensions}}
+    <tr class="{{if not .IsActive}}text-muted{{end}}">
+      <td>{{.Category}}</td>
+      <td><code>{{.Extension}}</code></td>
+      <td>{{.DisplayName}}</td>
+      <td>{{if .IsSensitive}}예{{else}}아니오{{end}}</td>
+      <td>{{if .IsActive}}활성{{else}}비활성{{end}}</td>
+      <td>
+        <form method="POST" action="/admin/monitoring/extensions/{{.ID}}/toggle" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn btn-sm btn-outline">{{if .IsActive}}비활성화{{else}}활성화{{end}}</button>
+        </form>
+        <form method="POST" action="/admin/monitoring/extensions/{{.ID}}/delete" style="display:inline;"
+              onsubmit="return confirm('정말 삭제하시겠습니까?');">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  <div style="padding:1rem;">
+    <h4>확장자 추가</h4>
+    <form method="POST" action="/admin/monitoring/extensions/add" class="d-flex gap-1" style="flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <select name="category" class="form-control" style="width:auto;" required>
+        <option value="cad">cad</option>
+        <option value="document">document</option>
+        <option value="spreadsheet">spreadsheet</option>
+        <option value="presentation">presentation</option>
+        <option value="archive">archive</option>
+        <option value="text">text</option>
+      </select>
+      <input type="text" name="extension" placeholder="예: .hwp" class="form-control" style="width:120px;" required>
+      <input type="text" name="display_name" placeholder="예: 한글 문서" class="form-control" style="width:200px;" required>
+      <label style="display:flex;align-items:center;gap:0.3rem;">
+        <input type="checkbox" name="is_sensitive" value="true" checked> 민감
+      </label>
+      <button type="submit" class="btn btn-primary">추가</button>
+    </form>
+  </div>
+</div>
+
+<!-- 감시 경로 -->
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header">감시 경로 ({{len .Paths}}개)</div>
+  <table class="table">
+    <thead><tr><th>유형</th><th>경로 패턴</th><th>설명</th><th>관리</th></tr></thead>
+    <tbody>
+    {{range .Paths}}
+    <tr>
+      <td><span class="badge">{{.PathType}}</span></td>
+      <td><code>{{.PathPattern}}</code></td>
+      <td>{{.Description}}</td>
+      <td>
+        <form method="POST" action="/admin/monitoring/paths/{{.ID}}/delete" style="display:inline;"
+              onsubmit="return confirm('정말 삭제하시겠습니까?');">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  <div style="padding:1rem;">
+    <h4>경로 추가</h4>
+    <form method="POST" action="/admin/monitoring/paths/add" class="d-flex gap-1" style="flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <select name="path_type" class="form-control" style="width:auto;" required>
+        <option value="documents">documents</option>
+        <option value="engineering">engineering</option>
+        <option value="removable">removable</option>
+        <option value="network">network</option>
+      </select>
+      <input type="text" name="path_pattern" placeholder="예: D:\Projects\%%" class="form-control" style="width:300px;" required>
+      <input type="text" name="description" placeholder="설명" class="form-control" style="width:200px;">
+      <button type="submit" class="btn btn-primary">추가</button>
+    </form>
+  </div>
+</div>
+
+<!-- 확장자 위장 탐지 규칙 -->
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header">확장자 위장 탐지 규칙 ({{len .DisguiseRules}}개)</div>
+  <p style="padding:0.5rem 1rem;margin:0;" class="text-muted">예: CAD 파일(.dwg)을 .jpg로 이름 바꾸면 알림 발생</p>
+  <table class="table">
+    <thead><tr><th>원본 카테고리</th><th>위장 확장자</th><th>관리</th></tr></thead>
+    <tbody>
+    {{range .DisguiseRules}}
+    <tr>
+      <td>{{.FromCategory}}</td>
+      <td><code>{{.ToExtension}}</code></td>
+      <td>
+        <form method="POST" action="/admin/monitoring/disguise/{{.ID}}/delete" style="display:inline;"
+              onsubmit="return confirm('정말 삭제하시겠습니까?');">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn btn-sm btn-danger">삭제</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  <div style="padding:1rem;">
+    <h4>위장 규칙 추가</h4>
+    <form method="POST" action="/admin/monitoring/disguise/add" class="d-flex gap-1" style="flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <select name="from_category" class="form-control" style="width:auto;" required>
+        <option value="cad">cad</option>
+        <option value="document">document</option>
+        <option value="spreadsheet">spreadsheet</option>
+      </select>
+      <input type="text" name="to_extension" placeholder="예: .jpg" class="form-control" style="width:120px;" required>
+      <button type="submit" class="btn btn-primary">추가</button>
+    </form>
+  </div>
+</div>
+{{end}}

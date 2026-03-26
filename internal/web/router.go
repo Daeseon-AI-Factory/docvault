@@ -14,6 +14,7 @@ import (
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/auth"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/endpoint"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/folder"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/vault"
 )
@@ -27,10 +28,11 @@ type RouterDeps struct {
 	AuditRepo       *audit.Repository
 	AuditHandler    *audit.Handler
 	EndpointHandler *endpoint.Handler
-	AlertHandler    *alert.Handler
-	PageHandler     *PageHandler
-	FormHandler     *FormHandler
-	Logger          *slog.Logger
+	AlertHandler     *alert.Handler
+	MonitorHandler   *monitoring.Handler
+	PageHandler      *PageHandler
+	FormHandler      *FormHandler
+	Logger           *slog.Logger
 }
 
 func NewRouter(deps RouterDeps) http.Handler {
@@ -170,6 +172,19 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Get("/admin/users/{userID}/edit", deps.PageHandler.AdminUserEditPage)
 		r.Post("/admin/users/{userID}/edit", deps.FormHandler.EditUser)
 		r.Post("/admin/users/{userID}/reset-password", deps.FormHandler.ResetPassword)
+
+		// Monitoring config admin
+		r.Get("/admin/monitoring", deps.PageHandler.AdminMonitoringPage)
+		r.Post("/admin/monitoring/processes/add", deps.MonitorHandler.AddProcessGroup)
+		r.Post("/admin/monitoring/processes/{id}/delete", deps.MonitorHandler.DeleteProcessGroup)
+		r.Post("/admin/monitoring/processes/{id}/toggle", deps.MonitorHandler.ToggleProcessGroup)
+		r.Post("/admin/monitoring/extensions/add", deps.MonitorHandler.AddExtension)
+		r.Post("/admin/monitoring/extensions/{id}/delete", deps.MonitorHandler.DeleteExtension)
+		r.Post("/admin/monitoring/extensions/{id}/toggle", deps.MonitorHandler.ToggleExtension)
+		r.Post("/admin/monitoring/paths/add", deps.MonitorHandler.AddPath)
+		r.Post("/admin/monitoring/paths/{id}/delete", deps.MonitorHandler.DeletePath)
+		r.Post("/admin/monitoring/disguise/add", deps.MonitorHandler.AddDisguiseRule)
+		r.Post("/admin/monitoring/disguise/{id}/delete", deps.MonitorHandler.DeleteDisguiseRule)
 	})
 
 	return r

@@ -137,6 +137,7 @@ func run(logger *slog.Logger) error {
 
 	// Monitoring config (DB-based, replaces all hardcoded process/extension lists)
 	monCfgRepo := monitoring.NewRepository(pool)
+	monHandler := monitoring.NewHandler(pool, monCfgRepo, logger)
 	alertEngine.SetMonitoringConfig(monCfgRepo)
 
 	// Endpoint dependencies (alert engine wired in for real-time evaluation)
@@ -153,8 +154,9 @@ func run(logger *slog.Logger) error {
 		UserRepo:      userRepo,
 		AuditRepo:     auditRepo,
 		EndpointRepo:  endpointRepo,
-		AlertRepo:     alertRepo,
-		PSKConfigured: cfg.OsqueryPSK != "",
+		AlertRepo:      alertRepo,
+		MonitorHandler: monHandler,
+		PSKConfigured:  cfg.OsqueryPSK != "",
 		Logger:        logger,
 	})
 	if err != nil {
@@ -180,8 +182,9 @@ func run(logger *slog.Logger) error {
 		AuditRepo:       auditRepo,
 		AuditHandler:    auditHandler,
 		EndpointHandler: endpointHandler,
-		AlertHandler:    alertHandler,
-		PageHandler:     pageHandler,
+		AlertHandler:     alertHandler,
+		MonitorHandler:   monHandler,
+		PageHandler:      pageHandler,
 		FormHandler:     formHandler,
 		Logger:          logger,
 	})
