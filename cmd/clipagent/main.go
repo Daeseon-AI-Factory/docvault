@@ -166,7 +166,7 @@ func uninstallService() {
 func runMonitor() {
 	serverURL := os.Getenv("DOCVAULT_SERVER_URL")
 	if serverURL == "" {
-		serverURL = "http://docvault.company.local:8080"
+		serverURL = "http://localhost:8080"
 	}
 
 	psk := os.Getenv("DOCVAULT_AGENT_PSK")

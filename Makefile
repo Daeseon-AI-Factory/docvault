@@ -1,4 +1,4 @@
-.PHONY: build run migrate seed test test-race vet clean clipagent precheck
+.PHONY: build run migrate seed test test-race vet clean clipagent precheck test-all ci
 
 # Build
 build:
@@ -18,7 +18,32 @@ migrate: build
 seed: build
 	./bin/docvault seed
 
-# Test
+# Test individual packages (avoids Windows memory issues)
+test-all:
+	@echo "=== Building ==="
+	go build ./...
+	@echo "=== Vet ==="
+	go vet ./...
+	@echo "=== Testing config ==="
+	go test -count=1 ./internal/config/
+	@echo "=== Testing auth ==="
+	go test -count=1 ./internal/auth/
+	@echo "=== Testing user ==="
+	go test -count=1 ./internal/user/
+	@echo "=== Testing vault ==="
+	go test -count=1 ./internal/vault/
+	@echo "=== Testing audit ==="
+	go test -count=1 ./internal/audit/
+	@echo "=== Testing alert ==="
+	go test -count=1 ./internal/alert/
+	@echo "=== Testing endpoint ==="
+	go test -count=1 ./internal/endpoint/
+	@echo "=== Testing web ==="
+	go test -count=1 ./internal/web/
+	@echo ""
+	@echo "ALL TESTS PASSED"
+
+# Quick test (parallel, may OOM on low-memory machines)
 test:
 	go test ./...
 
@@ -31,6 +56,10 @@ test-v:
 # Quality
 vet:
 	go vet ./...
+
+# CI: full check (build + vet + all tests)
+ci: test-all
+	@echo "CI check passed"
 
 # Pre-deployment verification (RUN THIS BEFORE EVERY DEPLOY)
 precheck:

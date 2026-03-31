@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: docvault
+      POSTGRES_USER: docvault_app
+      POSTGRES_PASSWORD: docvault_pass_2024
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docvault_app -d docvault"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DOCVAULT_DB_URL: "postgres://docvault_app:docvault_pass_2024@db:5432/docvault?sslmode=disable"
+      DOCVAULT_MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      DOCVAULT_JWT_SECRET: "docvault-jwt-dev-secret-2024"
+      DOCVAULT_VAULT_PATH: "/vault"
+      DOCVAULT_LISTEN_ADDR: ":8080"
+      DOCVAULT_OSQUERY_PSK: "dev-psk-for-testing"
+    ports:
+      - "8080:8080"
+    volumes:
+      - vaultdata:/vault
+
+volumes:
+  pgdata:
+  vaultdata:

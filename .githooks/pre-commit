@@ -1,0 +1,16 @@
+#!/bin/bash
+# DocVault pre-commit hook: build + vet + test
+# Install: git config core.hooksPath .githooks
+
+set -e
+
+echo "[pre-commit] Building..."
+go build ./...
+
+echo "[pre-commit] Vet..."
+go vet ./...
+
+echo "[pre-commit] Testing..."
+go test -count=1 ./internal/config/ ./internal/auth/ ./internal/user/ ./internal/vault/ ./internal/audit/ ./internal/alert/ ./internal/endpoint/ ./internal/web/
+
+echo "[pre-commit] All checks passed."

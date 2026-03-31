@@ -32,6 +32,7 @@ type PageHandler struct {
 	alertRepo      *alert.Repository
 	monitorHandler *monitoring.Handler
 	pskConfigured  bool
+	rateLimiter    *LoginRateLimiter
 	logger         *slog.Logger
 }
 
@@ -66,6 +67,7 @@ func NewPageHandler(deps PageHandlerDeps) (*PageHandler, error) {
 		alertRepo:      deps.AlertRepo,
 		monitorHandler: deps.MonitorHandler,
 		pskConfigured:  deps.PSKConfigured,
+		rateLimiter:    NewLoginRateLimiter(5, 10*time.Minute, 15*time.Minute),
 		logger:       deps.Logger,
 	}, nil
 }
@@ -107,6 +109,16 @@ func (h *PageHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
+	ip := ExtractIP(r)
+
+	// Rate limit check
+	if h.rateLimiter.IsLocked(ip) {
+		renderStandalone(w, h.tc, "login.html", map[string]interface{}{
+			"Error": "Too many failed attempts. Please try again in 15 minutes.", "CSRFToken": CSRFToken(r),
+		})
+		return
+	}
+
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
@@ -117,9 +129,18 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.FullName, &u.Role, &u.Department, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
 
 	if err != nil || user.CheckPassword(u.PasswordHash, password) != nil || !u.IsActive {
-		renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": "Invalid username or password", "CSRFToken": CSRFToken(r)})
+		locked := h.rateLimiter.RecordFailure(ip)
+		remaining := h.rateLimiter.RemainingAttempts(ip)
+		errMsg := fmt.Sprintf("Invalid username or password (%d attempts remaining)", remaining)
+		if locked {
+			errMsg = "Account locked for 15 minutes due to too many failed attempts"
+		}
+		renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": errMsg, "CSRFToken": CSRFToken(r)})
 		return
 	}
+
+	// Success: clear rate limiter
+	h.rateLimiter.RecordSuccess(ip)
 
 	tokens, err := h.jwtSvc.GenerateTokenPair(&u)
 	if err != nil {
