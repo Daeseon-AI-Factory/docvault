@@ -140,10 +140,14 @@ func run(logger *slog.Logger) error {
 	monHandler := monitoring.NewHandler(pool, monCfgRepo, logger)
 	alertEngine.SetMonitoringConfig(monCfgRepo)
 
+	// SSE hub for real-time dashboard updates
+	sseHub := web.NewSSEHub(logger)
+
 	// Endpoint dependencies (alert engine wired in for real-time evaluation)
 	endpointRepo := endpoint.NewRepository(pool)
 	endpointHandler := endpoint.NewHandler(endpointRepo, pool, cfg.OsqueryPSK, alertEngine, logger)
 	endpointHandler.SetMonitoringConfig(monCfgRepo)
+	endpointHandler.SetSSEHub(sseHub)
 
 	// Page handler (HTML templates)
 	pageHandler, err := web.NewPageHandler(web.PageHandlerDeps{
@@ -186,6 +190,7 @@ func run(logger *slog.Logger) error {
 		MonitorHandler:   monHandler,
 		PageHandler:      pageHandler,
 		FormHandler:     formHandler,
+		SSEHub:          sseHub,
 		Logger:          logger,
 	})
 
@@ -193,7 +198,7 @@ func run(logger *slog.Logger) error {
 		Addr:         cfg.ListenAddr,
 		Handler:      router,
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 0, // disabled for SSE long-lived connections
 		IdleTimeout:  120 * time.Second,
 	}
 

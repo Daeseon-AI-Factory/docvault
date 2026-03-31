@@ -32,6 +32,7 @@ type RouterDeps struct {
 	MonitorHandler   *monitoring.Handler
 	PageHandler      *PageHandler
 	FormHandler      *FormHandler
+	SSEHub           *SSEHub
 	Logger           *slog.Logger
 }
 
@@ -130,6 +131,11 @@ func NewRouter(deps RouterDeps) http.Handler {
 		// Endpoint event routes
 		r.Get("/api/events/search", deps.EndpointHandler.SearchEvents)
 		r.Get("/api/timeline/{userID}", deps.EndpointHandler.UnifiedTimeline)
+
+		// SSE: real-time event stream for dashboards
+		if deps.SSEHub != nil {
+			r.Get("/api/events/stream", deps.SSEHub.ServeHTTP)
+		}
 
 		// Alert routes
 		r.Get("/api/alerts", deps.AlertHandler.ListAlerts)

@@ -21,18 +21,30 @@ type AlertEvaluator interface {
 	Evaluate(ctx context.Context, event *EndpointEvent)
 }
 
+// SSEBroadcaster pushes real-time events to connected dashboard clients.
+type SSEBroadcaster interface {
+	BroadcastEndpointEvent(eventType, hostname, fileName, processName string)
+	BroadcastAlert(severity, message, hostname string)
+}
+
 type Handler struct {
 	repo           *Repository
 	db             *pgxpool.Pool
 	psk            string
 	alertEvaluator AlertEvaluator
 	monCfgRepo     *monitoring.Repository
+	sseBroadcaster SSEBroadcaster
 	logger         *slog.Logger
 }
 
 // SetMonitoringConfig sets the monitoring config repository for DB-based lookups.
 func (h *Handler) SetMonitoringConfig(monCfgRepo *monitoring.Repository) {
 	h.monCfgRepo = monCfgRepo
+}
+
+// SetSSEHub sets the SSE broadcaster for real-time dashboard updates.
+func (h *Handler) SetSSEHub(broadcaster SSEBroadcaster) {
+	h.sseBroadcaster = broadcaster
 }
 
 func NewHandler(repo *Repository, db *pgxpool.Pool, psk string, alertEval AlertEvaluator, logger *slog.Logger) *Handler {
@@ -117,10 +129,13 @@ func (h *Handler) ReceiveOsquery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Evaluate alert rules against each event
-	if h.alertEvaluator != nil {
-		for _, event := range events {
+	// Evaluate alert rules + broadcast to dashboards
+	for _, event := range events {
+		if h.alertEvaluator != nil {
 			h.alertEvaluator.Evaluate(r.Context(), event)
+		}
+		if h.sseBroadcaster != nil {
+			h.sseBroadcaster.BroadcastEndpointEvent(string(event.EventType), event.Hostname, event.FileName, event.ProcessName)
 		}
 	}
 
@@ -158,9 +173,12 @@ func (h *Handler) ReceiveClipboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Evaluate alert rules
+	// Evaluate alert rules + broadcast
 	if h.alertEvaluator != nil {
 		h.alertEvaluator.Evaluate(r.Context(), event)
+	}
+	if h.sseBroadcaster != nil {
+		h.sseBroadcaster.BroadcastEndpointEvent(string(event.EventType), event.Hostname, event.FileName, event.ProcessName)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

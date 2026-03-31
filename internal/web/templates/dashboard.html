@@ -105,4 +105,91 @@
     </div>
   </div>
 </div>
+
+<div id="sse-status" style="position:fixed;bottom:1rem;right:1rem;font-size:0.75rem;color:#999;"></div>
+
+<script>
+(function() {
+  var status = document.getElementById('sse-status');
+  var activityTable = document.querySelector('.card:first-child tbody');
+  var alertTable = document.querySelector('.card:last-child tbody');
+  var evtSource;
+
+  function connect() {
+    evtSource = new EventSource('/api/events/stream');
+
+    evtSource.addEventListener('connected', function() {
+      status.textContent = 'Live';
+      status.style.color = '#22c55e';
+    });
+
+    evtSource.addEventListener('endpoint', function(e) {
+      var d = JSON.parse(e.data).data;
+      var row = document.createElement('tr');
+      row.style.background = '#fffde7';
+      row.innerHTML = '<td>' + new Date().toLocaleTimeString() + '</td>'
+        + '<td><span class="badge badge-warning">' + escHtml(d.event_type) + '</span></td>'
+        + '<td>' + escHtml(d.hostname) + '</td>'
+        + '<td>' + escHtml(d.file_name || d.process_name || '-') + '</td>';
+      if (activityTable && activityTable.firstChild) {
+        activityTable.insertBefore(row, activityTable.firstChild);
+        if (activityTable.children.length > 20) activityTable.removeChild(activityTable.lastChild);
+      }
+      flashBorder(row);
+    });
+
+    evtSource.addEventListener('alert', function(e) {
+      var d = JSON.parse(e.data).data;
+      var row = document.createElement('tr');
+      row.style.background = '#fef2f2';
+      var badgeClass = d.severity === 'critical' ? 'badge-danger' : d.severity === 'high' ? 'badge-warning' : 'badge-secondary';
+      row.innerHTML = '<td><span class="badge ' + badgeClass + '">' + escHtml(d.severity) + '</span></td>'
+        + '<td>' + escHtml(d.message) + '</td>'
+        + '<td>' + escHtml(d.hostname) + '</td>'
+        + '<td>' + new Date().toLocaleTimeString() + '</td>';
+      if (alertTable && alertTable.firstChild) {
+        alertTable.insertBefore(row, alertTable.firstChild);
+      }
+      flashBorder(row);
+    });
+
+    evtSource.addEventListener('audit', function(e) {
+      var d = JSON.parse(e.data).data;
+      var row = document.createElement('tr');
+      row.style.background = '#f0f9ff';
+      row.innerHTML = '<td>' + new Date().toLocaleTimeString() + '</td>'
+        + '<td><span class="badge badge-info">' + escHtml(d.action) + '</span></td>'
+        + '<td>' + escHtml(d.username || '-') + '</td>'
+        + '<td>' + escHtml(d.target_name || '-') + '</td>';
+      if (activityTable && activityTable.firstChild) {
+        activityTable.insertBefore(row, activityTable.firstChild);
+        if (activityTable.children.length > 20) activityTable.removeChild(activityTable.lastChild);
+      }
+    });
+
+    evtSource.addEventListener('heartbeat', function() {
+      status.textContent = 'Live';
+    });
+
+    evtSource.onerror = function() {
+      status.textContent = 'Reconnecting...';
+      status.style.color = '#ef4444';
+      evtSource.close();
+      setTimeout(connect, 3000);
+    };
+  }
+
+  function flashBorder(el) {
+    el.style.transition = 'background 1s';
+    setTimeout(function() { el.style.background = ''; }, 2000);
+  }
+
+  function escHtml(s) {
+    if (!s) return '';
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  connect();
+})();
+</script>
 {{end}}
