@@ -7,6 +7,14 @@ build:
 clipagent:
 	GOOS=windows GOARCH=amd64 go build -o bin/docvault-clip.exe ./cmd/clipagent
 
+clipagent-mac:
+	GOOS=darwin GOARCH=amd64 go build -o bin/docvault-clip-mac ./cmd/clipagent
+
+clipagent-mac-arm:
+	GOOS=darwin GOARCH=arm64 go build -o bin/docvault-clip-mac-arm64 ./cmd/clipagent
+
+clipagent-all: clipagent clipagent-mac clipagent-mac-arm
+
 # Run
 run: build
 	./bin/docvault serve

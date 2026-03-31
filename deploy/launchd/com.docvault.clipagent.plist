@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.docvault.clipagent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/docvault-clip</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>DOCVAULT_SERVER_URL</key>
+        <string>http://docvault.company.local:8080</string>
+        <key>DOCVAULT_AGENT_PSK</key>
+        <string>your-psk-here</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/var/log/docvault-clip.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/docvault-clip.err</string>
+</dict>
+</plist>
