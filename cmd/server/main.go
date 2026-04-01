@@ -247,6 +247,23 @@ func run(logger *slog.Logger) error {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	// UEBA baseline recalculation scheduler (daily at 2:00 AM)
+	go func() {
+		// Initial calculation on startup
+		bgCtx := context.Background()
+		if err := uebaAnalyzer.RecalculateBaselines(bgCtx); err != nil {
+			logger.Error("initial baseline calculation", "error", err)
+		}
+		for {
+			now := time.Now()
+			next := time.Date(now.Year(), now.Month(), now.Day()+1, 2, 0, 0, 0, now.Location())
+			time.Sleep(time.Until(next))
+			if err := uebaAnalyzer.RecalculateBaselines(bgCtx); err != nil {
+				logger.Error("scheduled baseline calculation", "error", err)
+			}
+		}
+	}()
+
 	// Graceful shutdown
 	errCh := make(chan error, 1)
 	go func() {
