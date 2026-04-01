@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>DocVault - 2FA Verification</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <h2>2단계 인증</h2>
+      <p class="text-muted">Google Authenticator 앱에서 6자리 코드를 입력하세요.</p>
+      {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
+      <form method="POST" action="/login/2fa">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <div class="form-group">
+          <label>인증 코드</label>
+          <input type="text" name="totp_code" class="form-control" placeholder="6자리 코드" maxlength="6" pattern="[0-9]{6}" autofocus autocomplete="one-time-code" inputmode="numeric">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">확인</button>
+      </form>
+      <hr style="margin:1.5rem 0;">
+      <details>
+        <summary style="cursor:pointer;color:#666;">복구 코드 사용</summary>
+        <form method="POST" action="/login/2fa" style="margin-top:0.5rem;">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <div class="form-group">
+            <label>복구 코드</label>
+            <input type="text" name="recovery_code" class="form-control" placeholder="XXXX-XXXX">
+          </div>
+          <button type="submit" class="btn btn-outline" style="width:100%;">복구 코드로 로그인</button>
+        </form>
+      </details>
+      <p style="margin-top:1rem;text-align:center;"><a href="/login">← 로그인으로 돌아가기</a></p>
+    </div>
+  </div>
+</body>
+</html>

@@ -39,6 +39,32 @@ func (s *JWTService) Secret() string {
 	return string(s.secret)
 }
 
+// GeneratePending2FAToken creates a short-lived token that proves password was verified.
+func (s *JWTService) GeneratePending2FAToken(userID int64) (string, error) {
+	claims := &Claims{
+		UserID: userID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   "pending_2fa",
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
+}
+
+// ValidatePending2FAToken verifies a pending 2FA token and returns the user ID.
+func (s *JWTService) ValidatePending2FAToken(tokenStr string) (int64, error) {
+	claims, err := s.ValidateToken(tokenStr)
+	if err != nil {
+		return 0, err
+	}
+	if claims.Subject != "pending_2fa" {
+		return 0, fmt.Errorf("not a pending 2fa token")
+	}
+	return claims.UserID, nil
+}
+
 func (s *JWTService) GenerateTokenPair(u *user.User) (*TokenPair, error) {
 	accessToken, err := s.generateToken(u, accessTokenDuration)
 	if err != nil {

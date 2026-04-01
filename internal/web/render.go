@@ -58,6 +58,7 @@ func newTemplateCache() (*templateCache, error) {
 		"admin_agents.html",
 		"admin_monitoring.html",
 		"events_search.html",
+		"totp_setup.html",
 	}
 
 	for _, page := range layoutPages {
@@ -77,6 +78,12 @@ func newTemplateCache() (*templateCache, error) {
 		return nil, fmt.Errorf("parse login template: %w", err)
 	}
 	tc.cache["login.html"] = loginTmpl
+
+	login2faTmpl, err := template.New("login_2fa.html").Funcs(funcMap).ParseFS(templateFS, "templates/login_2fa.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse login_2fa template: %w", err)
+	}
+	tc.cache["login_2fa.html"] = login2faTmpl
 
 	return tc, nil
 }

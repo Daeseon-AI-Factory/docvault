@@ -124,9 +124,11 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 
 	var u user.User
 	err := h.db.QueryRow(r.Context(),
-		`SELECT id, username, email, password_hash, full_name, role, department, is_active, created_at, updated_at
+		`SELECT id, username, email, password_hash, full_name, role, department, is_active,
+		        COALESCE(totp_secret,''), COALESCE(totp_enabled,false), created_at, updated_at
 		 FROM users WHERE username = $1`, username,
-	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.FullName, &u.Role, &u.Department, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.FullName, &u.Role, &u.Department, &u.IsActive,
+		&u.TOTPSecret, &u.TOTPEnabled, &u.CreatedAt, &u.UpdatedAt)
 
 	if err != nil || user.CheckPassword(u.PasswordHash, password) != nil || !u.IsActive {
 		locked := h.rateLimiter.RecordFailure(ip)
@@ -139,15 +141,30 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Success: clear rate limiter
-	h.rateLimiter.RecordSuccess(ip)
-
-	tokens, err := h.jwtSvc.GenerateTokenPair(&u)
-	if err != nil {
-		renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": "Internal error", "CSRFToken": CSRFToken(r)})
+	// If 2FA is enabled, redirect to TOTP verification page instead of logging in
+	if u.TOTPEnabled {
+		// Store user ID in a short-lived pending-2fa cookie (HMAC signed)
+		pendingToken, _ := h.jwtSvc.GeneratePending2FAToken(u.ID)
+		http.SetCookie(w, &http.Cookie{
+			Name: "pending_2fa", Value: pendingToken, Path: "/",
+			HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 300, // 5 minutes
+		})
+		http.Redirect(w, r, "/login/2fa", http.StatusSeeOther)
 		return
 	}
 
+	// Success: clear rate limiter
+	h.rateLimiter.RecordSuccess(ip)
+	h.issueSessionCookies(w, &u)
+	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+}
+
+// issueSessionCookies sets the JWT access + refresh cookies.
+func (h *PageHandler) issueSessionCookies(w http.ResponseWriter, u *user.User) {
+	tokens, err := h.jwtSvc.GenerateTokenPair(u)
+	if err != nil {
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name: "token", Value: tokens.AccessToken, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 900,
@@ -156,8 +173,173 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		Name: "refresh_token", Value: tokens.RefreshToken, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400,
 	})
+}
 
+// Login2FAPage shows the TOTP code input form.
+func (h *PageHandler) Login2FAPage(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("pending_2fa")
+	if err != nil || cookie.Value == "" {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	renderStandalone(w, h.tc, "login_2fa.html", map[string]interface{}{"Error": "", "CSRFToken": CSRFToken(r)})
+}
+
+// Login2FASubmit validates the TOTP code and completes login.
+func (h *PageHandler) Login2FASubmit(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("pending_2fa")
+	if err != nil || cookie.Value == "" {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	userID, err := h.jwtSvc.ValidatePending2FAToken(cookie.Value)
+	if err != nil {
+		http.SetCookie(w, &http.Cookie{Name: "pending_2fa", Path: "/", MaxAge: -1})
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	code := r.FormValue("totp_code")
+	recoveryCode := r.FormValue("recovery_code")
+
+	var u user.User
+	err = h.db.QueryRow(r.Context(),
+		`SELECT id, username, email, password_hash, full_name, role, department, is_active,
+		        COALESCE(totp_secret,''), COALESCE(totp_enabled,false), created_at, updated_at
+		 FROM users WHERE id = $1`, userID,
+	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.FullName, &u.Role, &u.Department, &u.IsActive,
+		&u.TOTPSecret, &u.TOTPEnabled, &u.CreatedAt, &u.UpdatedAt)
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	valid := false
+	if code != "" {
+		valid = auth.ValidateTOTP(u.TOTPSecret, code)
+	} else if recoveryCode != "" {
+		// Check recovery code
+		var codeID int64
+		err := h.db.QueryRow(r.Context(),
+			`SELECT id FROM totp_recovery_codes WHERE user_id = $1 AND code = $2 AND used = false`,
+			u.ID, recoveryCode).Scan(&codeID)
+		if err == nil {
+			h.db.Exec(r.Context(), `UPDATE totp_recovery_codes SET used = true WHERE id = $1`, codeID)
+			valid = true
+		}
+	}
+
+	if !valid {
+		renderStandalone(w, h.tc, "login_2fa.html", map[string]interface{}{
+			"Error": "Invalid verification code", "CSRFToken": CSRFToken(r),
+		})
+		return
+	}
+
+	// 2FA verified — clear pending cookie and issue session
+	http.SetCookie(w, &http.Cookie{Name: "pending_2fa", Path: "/", MaxAge: -1})
+	h.rateLimiter.RecordSuccess(ExtractIP(r))
+	h.issueSessionCookies(w, &u)
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+}
+
+// --- 2FA Setup/Manage ---
+
+func (h *PageHandler) TwoFactorPage(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	var totpEnabled bool
+	h.db.QueryRow(r.Context(), `SELECT COALESCE(totp_enabled,false) FROM users WHERE id = $1`, u.ID).Scan(&totpEnabled)
+	data := h.pageData(r, "2FA Settings", "account")
+	data["TOTPEnabled"] = totpEnabled
+	renderPage(w, h.tc, "totp_setup.html", data)
+}
+
+func (h *PageHandler) TwoFactorSetup(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	secret, err := auth.GenerateTOTPSecret()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	data := h.pageData(r, "2FA Setup", "account")
+	data["SetupSecret"] = secret
+	renderPage(w, h.tc, "totp_setup.html", data)
+}
+
+func (h *PageHandler) TwoFactorVerify(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	secret := r.FormValue("secret")
+	code := r.FormValue("totp_code")
+
+	if !auth.ValidateTOTP(secret, code) {
+		data := h.pageData(r, "2FA Setup", "account")
+		data["SetupSecret"] = secret
+		data["Error"] = "Invalid code. Please try again."
+		renderPage(w, h.tc, "totp_setup.html", data)
+		return
+	}
+
+	// Save secret and enable 2FA
+	_, err := h.db.Exec(r.Context(),
+		`UPDATE users SET totp_secret = $1, totp_enabled = true WHERE id = $2`, secret, u.ID)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// Generate recovery codes
+	codes, _ := auth.GenerateRecoveryCodes()
+	for _, code := range codes {
+		h.db.Exec(r.Context(),
+			`INSERT INTO totp_recovery_codes (user_id, code) VALUES ($1, $2)`, u.ID, code)
+	}
+
+	data := h.pageData(r, "2FA Enabled", "account")
+	data["RecoveryCodes"] = codes
+	renderPage(w, h.tc, "totp_setup.html", data)
+}
+
+func (h *PageHandler) TwoFactorDisable(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	code := r.FormValue("totp_code")
+
+	// Load current secret
+	var secret string
+	h.db.QueryRow(r.Context(), `SELECT COALESCE(totp_secret,'') FROM users WHERE id = $1`, u.ID).Scan(&secret)
+
+	if !auth.ValidateTOTP(secret, code) {
+		data := h.pageData(r, "2FA Settings", "account")
+		data["TOTPEnabled"] = true
+		data["Error"] = "Invalid code"
+		renderPage(w, h.tc, "totp_setup.html", data)
+		return
+	}
+
+	h.db.Exec(r.Context(), `UPDATE users SET totp_secret = '', totp_enabled = false WHERE id = $1`, u.ID)
+	h.db.Exec(r.Context(), `DELETE FROM totp_recovery_codes WHERE user_id = $1`, u.ID)
+
+	http.Redirect(w, r, "/account/2fa", http.StatusSeeOther)
 }
 
 func (h *PageHandler) Logout(w http.ResponseWriter, r *http.Request) {

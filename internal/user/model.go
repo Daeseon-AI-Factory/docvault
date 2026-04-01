@@ -24,6 +24,8 @@ type User struct {
 	Role         Role      `json:"role"`
 	Department   string    `json:"department"`
 	IsActive     bool      `json:"is_active"`
+	TOTPSecret   string    `json:"-"`
+	TOTPEnabled  bool      `json:"totp_enabled"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }

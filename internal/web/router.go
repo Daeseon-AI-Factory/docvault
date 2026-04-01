@@ -59,6 +59,8 @@ func NewRouter(deps RouterDeps) http.Handler {
 	// Public web pages
 	r.Get("/login", deps.PageHandler.LoginPage)
 	r.Post("/login", deps.PageHandler.LoginSubmit)
+	r.Get("/login/2fa", deps.PageHandler.Login2FAPage)
+	r.Post("/login/2fa", deps.PageHandler.Login2FASubmit)
 	r.Get("/logout", deps.PageHandler.Logout)
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
@@ -191,6 +193,12 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Post("/admin/monitoring/paths/{id}/delete", deps.MonitorHandler.DeletePath)
 		r.Post("/admin/monitoring/disguise/add", deps.MonitorHandler.AddDisguiseRule)
 		r.Post("/admin/monitoring/disguise/{id}/delete", deps.MonitorHandler.DeleteDisguiseRule)
+
+		// 2FA setup
+		r.Get("/account/2fa", deps.PageHandler.TwoFactorPage)
+		r.Post("/account/2fa/setup", deps.PageHandler.TwoFactorSetup)
+		r.Post("/account/2fa/verify", deps.PageHandler.TwoFactorVerify)
+		r.Post("/account/2fa/disable", deps.PageHandler.TwoFactorDisable)
 	})
 
 	return r
