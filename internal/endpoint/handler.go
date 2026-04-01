@@ -27,14 +27,39 @@ type SSEBroadcaster interface {
 	BroadcastAlert(severity, message, hostname string)
 }
 
+// BehaviorAnalyzer evaluates user behavior against baselines.
+type BehaviorAnalyzer interface {
+	AnalyzeEvent(ctx context.Context, evt BehaviorEventContext) []BehaviorRiskFactor
+}
+
+// BehaviorEventContext is the data needed for behavior analysis.
+type BehaviorEventContext struct {
+	UserID      int64
+	EventType   string
+	FileName    string
+	FilePath    string
+	ProcessName string
+	Hostname    string
+	IPAddress   string
+	EventTime   time.Time
+}
+
+// BehaviorRiskFactor is returned by the analyzer.
+type BehaviorRiskFactor struct {
+	Factor string
+	Weight int
+	Detail string
+}
+
 type Handler struct {
-	repo           *Repository
-	db             *pgxpool.Pool
-	psk            string
-	alertEvaluator AlertEvaluator
-	monCfgRepo     *monitoring.Repository
-	sseBroadcaster SSEBroadcaster
-	logger         *slog.Logger
+	repo             *Repository
+	db               *pgxpool.Pool
+	psk              string
+	alertEvaluator   AlertEvaluator
+	monCfgRepo       *monitoring.Repository
+	sseBroadcaster   SSEBroadcaster
+	behaviorAnalyzer BehaviorAnalyzer
+	logger           *slog.Logger
 }
 
 // SetMonitoringConfig sets the monitoring config repository for DB-based lookups.
@@ -45,6 +70,11 @@ func (h *Handler) SetMonitoringConfig(monCfgRepo *monitoring.Repository) {
 // SetSSEHub sets the SSE broadcaster for real-time dashboard updates.
 func (h *Handler) SetSSEHub(broadcaster SSEBroadcaster) {
 	h.sseBroadcaster = broadcaster
+}
+
+// SetBehaviorAnalyzer sets the UEBA analyzer for real-time anomaly detection.
+func (h *Handler) SetBehaviorAnalyzer(analyzer BehaviorAnalyzer) {
+	h.behaviorAnalyzer = analyzer
 }
 
 func NewHandler(repo *Repository, db *pgxpool.Pool, psk string, alertEval AlertEvaluator, logger *slog.Logger) *Handler {
@@ -137,6 +167,14 @@ func (h *Handler) ReceiveOsquery(w http.ResponseWriter, r *http.Request) {
 		if h.sseBroadcaster != nil {
 			h.sseBroadcaster.BroadcastEndpointEvent(string(event.EventType), event.Hostname, event.FileName, event.ProcessName)
 		}
+		if h.behaviorAnalyzer != nil && event.UserID != nil {
+			h.behaviorAnalyzer.AnalyzeEvent(r.Context(), BehaviorEventContext{
+				UserID: *event.UserID, EventType: string(event.EventType),
+				FileName: event.FileName, FilePath: event.FilePath,
+				ProcessName: event.ProcessName, Hostname: event.Hostname,
+				EventTime: event.EventTime,
+			})
+		}
 	}
 
 	h.logger.Info("received osquery events", "count", len(events), "host", batch.Results[0].HostIdentifier)
@@ -179,6 +217,13 @@ func (h *Handler) ReceiveClipboard(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.sseBroadcaster != nil {
 		h.sseBroadcaster.BroadcastEndpointEvent(string(event.EventType), event.Hostname, event.FileName, event.ProcessName)
+	}
+	if h.behaviorAnalyzer != nil && event.UserID != nil {
+		h.behaviorAnalyzer.AnalyzeEvent(r.Context(), BehaviorEventContext{
+			UserID: *event.UserID, EventType: string(event.EventType),
+			FileName: event.FileName, Hostname: event.Hostname,
+			EventTime: event.EventTime,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")

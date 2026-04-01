@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -20,6 +21,20 @@ import (
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/vault"
 )
 
+// UEBARiskProvider returns top risky users for the dashboard widget.
+type UEBARiskProvider interface {
+	GetTopRiskUsers(ctx context.Context, limit int) ([]UserRiskSummary, error)
+}
+
+// UserRiskSummary is a dashboard-facing risk summary.
+type UserRiskSummary struct {
+	UserID   int64  `json:"user_id"`
+	Username string `json:"username"`
+	FullName string `json:"full_name"`
+	Score    int    `json:"score"`
+	Level    string `json:"level"`
+}
+
 type PageHandler struct {
 	tc           *templateCache
 	db           *pgxpool.Pool
@@ -31,6 +46,7 @@ type PageHandler struct {
 	endpointRepo *endpoint.Repository
 	alertRepo      *alert.Repository
 	monitorHandler *monitoring.Handler
+	uebaProvider   UEBARiskProvider
 	pskConfigured  bool
 	rateLimiter    *LoginRateLimiter
 	logger         *slog.Logger
@@ -46,6 +62,7 @@ type PageHandlerDeps struct {
 	EndpointRepo   *endpoint.Repository
 	AlertRepo      *alert.Repository
 	MonitorHandler *monitoring.Handler
+	UEBAAnalyzer   UEBARiskProvider
 	PSKConfigured  bool
 	Logger         *slog.Logger
 }
@@ -66,6 +83,7 @@ func NewPageHandler(deps PageHandlerDeps) (*PageHandler, error) {
 		endpointRepo: deps.EndpointRepo,
 		alertRepo:      deps.AlertRepo,
 		monitorHandler: deps.MonitorHandler,
+		uebaProvider:   deps.UEBAAnalyzer,
 		pskConfigured:  deps.PSKConfigured,
 		rateLimiter:    NewLoginRateLimiter(5, 10*time.Minute, 15*time.Minute),
 		logger:       deps.Logger,
@@ -376,11 +394,18 @@ func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		suspiciousEvents = append(suspiciousEvents, evts...)
 	}
 
+	// UEBA: top risky users
+	var riskUsers []UserRiskSummary
+	if h.uebaProvider != nil {
+		riskUsers, _ = h.uebaProvider.GetTopRiskUsers(r.Context(), 5)
+	}
+
 	data := h.pageData(r, "Dashboard", "dashboard")
 	data["Stats"] = dashStats{stats.TotalEvents, stats.TodayEvents, 0, len(alerts)}
 	data["RecentLogs"] = recentLogs
 	data["Alerts"] = alerts
 	data["SuspiciousEvents"] = suspiciousEvents
+	data["RiskUsers"] = riskUsers
 	renderPage(w, h.tc, "dashboard.html", data)
 }
 

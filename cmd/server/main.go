@@ -19,9 +19,48 @@ import (
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/folder"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/ueba"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/vault"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/web"
 )
+
+// uebaBridge adapts ueba.Analyzer to both endpoint.BehaviorAnalyzer and web.UEBARiskProvider.
+type uebaBridge struct {
+	analyzer *ueba.Analyzer
+}
+
+func (b *uebaBridge) GetTopRiskUsers(ctx context.Context, limit int) ([]web.UserRiskSummary, error) {
+	users, err := b.analyzer.GetTopRiskUsers(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]web.UserRiskSummary, len(users))
+	for i, u := range users {
+		result[i] = web.UserRiskSummary{
+			UserID: u.UserID, Username: u.Username, FullName: u.FullName,
+			Score: u.Score, Level: u.Level,
+		}
+	}
+	return result, nil
+}
+
+func (b *uebaBridge) AnalyzeEvent(ctx context.Context, evt endpoint.BehaviorEventContext) []endpoint.BehaviorRiskFactor {
+	factors := b.analyzer.AnalyzeEvent(ctx, ueba.EventContext{
+		UserID:      evt.UserID,
+		EventType:   evt.EventType,
+		FileName:    evt.FileName,
+		FilePath:    evt.FilePath,
+		ProcessName: evt.ProcessName,
+		Hostname:    evt.Hostname,
+		IPAddress:   evt.IPAddress,
+		EventTime:   evt.EventTime,
+	})
+	result := make([]endpoint.BehaviorRiskFactor, len(factors))
+	for i, f := range factors {
+		result[i] = endpoint.BehaviorRiskFactor{Factor: f.Factor, Weight: f.Weight, Detail: f.Detail}
+	}
+	return result
+}
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -143,11 +182,16 @@ func run(logger *slog.Logger) error {
 	// SSE hub for real-time dashboard updates
 	sseHub := web.NewSSEHub(logger)
 
+	// UEBA: User & Entity Behavior Analytics
+	uebaAnalyzer := ueba.NewAnalyzer(pool, logger)
+
 	// Endpoint dependencies (alert engine wired in for real-time evaluation)
 	endpointRepo := endpoint.NewRepository(pool)
 	endpointHandler := endpoint.NewHandler(endpointRepo, pool, cfg.OsqueryPSK, alertEngine, logger)
 	endpointHandler.SetMonitoringConfig(monCfgRepo)
 	endpointHandler.SetSSEHub(sseHub)
+	bridge := &uebaBridge{analyzer: uebaAnalyzer}
+	endpointHandler.SetBehaviorAnalyzer(bridge)
 
 	// Page handler (HTML templates)
 	pageHandler, err := web.NewPageHandler(web.PageHandlerDeps{
@@ -160,6 +204,7 @@ func run(logger *slog.Logger) error {
 		EndpointRepo:  endpointRepo,
 		AlertRepo:      alertRepo,
 		MonitorHandler: monHandler,
+		UEBAAnalyzer:   bridge,
 		PSKConfigured:  cfg.OsqueryPSK != "",
 		Logger:        logger,
 	})

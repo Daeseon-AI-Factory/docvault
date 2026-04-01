@@ -106,6 +106,31 @@
   </div>
 </div>
 
+<!-- Risk Users (UEBA) -->
+{{if .RiskUsers}}
+<div class="card" style="margin-top:1.5rem;">
+  <div class="card-header">Risk Users (Today)</div>
+  <table class="table">
+    <thead><tr><th>User</th><th>Score</th><th>Level</th></tr></thead>
+    <tbody>
+      {{range .RiskUsers}}
+      <tr>
+        <td><a href="/audit/users/{{.UserID}}">{{.FullName}}</a> <span class="text-muted">({{.Username}})</span></td>
+        <td><strong>{{.Score}}</strong>/100</td>
+        <td>
+          {{if eq .Level "critical"}}<span class="badge badge-danger">CRITICAL</span>
+          {{else if eq .Level "high"}}<span class="badge badge-warning">HIGH</span>
+          {{else if eq .Level "medium"}}<span class="badge badge-info">MEDIUM</span>
+          {{else}}<span class="badge badge-secondary">LOW</span>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+
 <div id="sse-status" style="position:fixed;bottom:1rem;right:1rem;font-size:0.75rem;color:#999;"></div>
 
 <script>
