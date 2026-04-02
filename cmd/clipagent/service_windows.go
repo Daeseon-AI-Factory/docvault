@@ -5,6 +5,7 @@ package main
 import (
 	"log"
 	"os"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
@@ -96,7 +97,22 @@ func installService() {
 	}
 	defer windows.CloseServiceHandle(s)
 
-	log.Println("Service installed successfully. Start with: net start DocVaultClipAgent")
+	// Set auto-recovery: restart on failure (5s, 10s, 30s)
+	actions := [3]windows.SC_ACTION{
+		{Type: windows.SC_ACTION_RESTART, Delay: 5000},
+		{Type: windows.SC_ACTION_RESTART, Delay: 10000},
+		{Type: windows.SC_ACTION_RESTART, Delay: 30000},
+	}
+	failureActions := windows.SERVICE_FAILURE_ACTIONS{
+		ResetPeriod:  60,
+		ActionsCount: 3,
+		Actions:      &actions[0],
+	}
+	if err := windows.ChangeServiceConfig2(s, windows.SERVICE_CONFIG_FAILURE_ACTIONS, (*byte)(unsafe.Pointer(&failureActions))); err != nil {
+		log.Printf("warning: could not set recovery actions: %v", err)
+	}
+
+	log.Println("Service installed with auto-recovery. Start with: net start DocVaultClipAgent")
 }
 
 func uninstallService() {
