@@ -2,7 +2,11 @@ package web
 
 import (
 	"context"
+	"crypto/md5"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -26,6 +30,37 @@ type UEBARiskProvider interface {
 	GetTopRiskUsers(ctx context.Context, limit int) ([]UserRiskSummary, error)
 }
 
+// FileTrackerUI provides tracked file data for admin pages.
+type FileTrackerUI interface {
+	List(ctx context.Context) ([]TrackedFileView, error)
+	GetAllDetections(ctx context.Context, limit int) ([]DetectionView, error)
+	GetDetections(ctx context.Context, trackedFileID int64, limit int) ([]DetectionView, error)
+	Register(ctx context.Context, name, sha256, md5, sensitivity, description string, userID int64) error
+	Unregister(ctx context.Context, id int64) error
+}
+
+type TrackedFileView struct {
+	ID           int64  `json:"id"`
+	OriginalName string `json:"original_name"`
+	SHA256Hash   string `json:"sha256_hash"`
+	Sensitivity  string `json:"sensitivity"`
+	Description  string `json:"description"`
+	IsActive     bool   `json:"is_active"`
+}
+
+type DetectionView struct {
+	ID           int64     `json:"id"`
+	TrackedFileID int64    `json:"tracked_file_id"`
+	OriginalName string    `json:"original_name"`
+	Sensitivity  string    `json:"sensitivity"`
+	FoundName    string    `json:"found_name"`
+	FoundPath    string    `json:"found_path"`
+	Hostname     string    `json:"hostname"`
+	EventType    string    `json:"event_type"`
+	ProcessName  string    `json:"process_name"`
+	DetectedAt   time.Time `json:"detected_at"`
+}
+
 // UserRiskSummary is a dashboard-facing risk summary.
 type UserRiskSummary struct {
 	UserID   int64  `json:"user_id"`
@@ -47,6 +82,7 @@ type PageHandler struct {
 	alertRepo      *alert.Repository
 	monitorHandler *monitoring.Handler
 	uebaProvider   UEBARiskProvider
+	fileTracker    FileTrackerUI
 	pskConfigured  bool
 	rateLimiter    *LoginRateLimiter
 	logger         *slog.Logger
@@ -63,6 +99,7 @@ type PageHandlerDeps struct {
 	AlertRepo      *alert.Repository
 	MonitorHandler *monitoring.Handler
 	UEBAAnalyzer   UEBARiskProvider
+	FileTracker    FileTrackerUI
 	PSKConfigured  bool
 	Logger         *slog.Logger
 }
@@ -84,6 +121,7 @@ func NewPageHandler(deps PageHandlerDeps) (*PageHandler, error) {
 		alertRepo:      deps.AlertRepo,
 		monitorHandler: deps.MonitorHandler,
 		uebaProvider:   deps.UEBAAnalyzer,
+		fileTracker:    deps.FileTracker,
 		pskConfigured:  deps.PSKConfigured,
 		rateLimiter:    NewLoginRateLimiter(5, 10*time.Minute, 15*time.Minute),
 		logger:       deps.Logger,
@@ -358,6 +396,68 @@ func (h *PageHandler) TwoFactorDisable(w http.ResponseWriter, r *http.Request) {
 	h.db.Exec(r.Context(), `DELETE FROM totp_recovery_codes WHERE user_id = $1`, u.ID)
 
 	http.Redirect(w, r, "/account/2fa", http.StatusSeeOther)
+}
+
+// --- File Tracking ---
+
+func (h *PageHandler) AdminTrackingPage(w http.ResponseWriter, r *http.Request) {
+	data := h.pageData(r, "File Tracking", "admin-tracking")
+	if h.fileTracker != nil {
+		files, _ := h.fileTracker.List(r.Context())
+		detections, _ := h.fileTracker.GetAllDetections(r.Context(), 50)
+		data["TrackedFiles"] = files
+		data["Detections"] = detections
+	}
+	renderPage(w, h.tc, "admin_tracking.html", data)
+}
+
+func (h *PageHandler) AdminTrackingAdd(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "file required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Calculate hashes by reading the file
+	import_sha256 := sha256Hash(file)
+	file.Seek(0, 0)
+	import_md5 := md5Hash(file)
+
+	sensitivity := r.FormValue("sensitivity")
+	description := r.FormValue("description")
+
+	if h.fileTracker != nil {
+		h.fileTracker.Register(r.Context(), header.Filename, import_sha256, import_md5, sensitivity, description, u.ID)
+	}
+
+	http.Redirect(w, r, "/admin/tracking", http.StatusSeeOther)
+}
+
+func (h *PageHandler) AdminTrackingDelete(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if h.fileTracker != nil {
+		h.fileTracker.Unregister(r.Context(), id)
+	}
+	http.Redirect(w, r, "/admin/tracking", http.StatusSeeOther)
+}
+
+func (h *PageHandler) AdminTrackingDetections(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	data := h.pageData(r, "Detection History", "admin-tracking")
+	if h.fileTracker != nil {
+		detections, _ := h.fileTracker.GetDetections(r.Context(), id, 100)
+		data["Detections"] = detections
+		files, _ := h.fileTracker.List(r.Context())
+		data["TrackedFiles"] = files
+	}
+	renderPage(w, h.tc, "admin_tracking.html", data)
 }
 
 func (h *PageHandler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -768,4 +868,16 @@ func (h *PageHandler) buildBreadcrumbs(r *http.Request, folderID *int64) []folde
 		currentID = f.ParentID
 	}
 	return crumbs
+}
+
+func sha256Hash(r io.Reader) string {
+	h := sha256.New()
+	io.Copy(h, r)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func md5Hash(r io.ReadSeeker) string {
+	h := md5.New()
+	io.Copy(h, r)
+	return hex.EncodeToString(h.Sum(nil))
 }

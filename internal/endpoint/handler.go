@@ -32,6 +32,11 @@ type BehaviorAnalyzer interface {
 	AnalyzeEvent(ctx context.Context, evt BehaviorEventContext) []BehaviorRiskFactor
 }
 
+// FileTracker checks if a file's hash matches any tracked file.
+type FileTracker interface {
+	CheckEvent(ctx context.Context, sha256, md5, hostname, foundPath, foundName, eventType, processName string, userID *int64) int64
+}
+
 // BehaviorEventContext is the data needed for behavior analysis.
 type BehaviorEventContext struct {
 	UserID      int64
@@ -59,7 +64,13 @@ type Handler struct {
 	monCfgRepo       *monitoring.Repository
 	sseBroadcaster   SSEBroadcaster
 	behaviorAnalyzer BehaviorAnalyzer
+	fileTracker      FileTracker
 	logger           *slog.Logger
+}
+
+// SetFileTracker sets the hash-based file tracker.
+func (h *Handler) SetFileTracker(tracker FileTracker) {
+	h.fileTracker = tracker
 }
 
 // SetMonitoringConfig sets the monitoring config repository for DB-based lookups.
@@ -174,6 +185,18 @@ func (h *Handler) ReceiveOsquery(w http.ResponseWriter, r *http.Request) {
 				ProcessName: event.ProcessName, Hostname: event.Hostname,
 				EventTime: event.EventTime,
 			})
+		}
+		// Hash-based file tracking
+		if h.fileTracker != nil && event.Detail != nil {
+			var detail map[string]string
+			json.Unmarshal(event.Detail, &detail)
+			sha256 := detail["sha256"]
+			md5 := detail["md5"]
+			if sha256 != "" || md5 != "" {
+				h.fileTracker.CheckEvent(r.Context(), sha256, md5,
+					event.Hostname, event.FilePath, event.FileName,
+					string(event.EventType), event.ProcessName, event.UserID)
+			}
 		}
 	}
 

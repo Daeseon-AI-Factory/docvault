@@ -1,0 +1,82 @@
+{{define "content"}}
+<h2>File Tracking (Hash-based)</h2>
+<p class="text-muted">등록된 파일은 이름/확장자를 바꿔도 SHA-256 해시로 추적됩니다.</p>
+
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header">추적 대상 파일 ({{len .TrackedFiles}}개)</div>
+  <table class="table">
+    <thead><tr><th>원본 파일명</th><th>SHA-256</th><th>민감도</th><th>설명</th><th>상태</th><th>액션</th></tr></thead>
+    <tbody>
+    {{range .TrackedFiles}}
+    <tr>
+      <td><strong>{{.OriginalName}}</strong></td>
+      <td><code style="font-size:0.7rem;">{{.SHA256Hash}}</code></td>
+      <td>
+        {{if eq .Sensitivity "top_secret"}}<span class="badge badge-danger">극비</span>
+        {{else if eq .Sensitivity "confidential"}}<span class="badge badge-warning">기밀</span>
+        {{else}}<span class="badge badge-info">대외비</span>
+        {{end}}
+      </td>
+      <td>{{.Description}}</td>
+      <td>{{if .IsActive}}추적중{{else}}중지{{end}}</td>
+      <td>
+        <a href="/admin/tracking/{{.ID}}/detections" class="btn btn-sm btn-outline">탐지 이력</a>
+        <form method="POST" action="/admin/tracking/{{.ID}}/delete" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('추적을 중지하시겠습니까?')">중지</button>
+        </form>
+      </td>
+    </tr>
+    {{else}}
+    <tr><td colspan="6" class="text-muted">등록된 추적 파일이 없습니다.</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  <div style="padding:1rem;">
+    <form method="POST" action="/admin/tracking/add" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <div class="d-flex gap-1" style="flex-wrap:wrap;">
+        <div class="form-group" style="flex:1;">
+          <label>파일 선택 (해시 자동 계산)</label>
+          <input type="file" name="file" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>민감도</label>
+          <select name="sensitivity" class="form-control">
+            <option value="restricted">대외비</option>
+            <option value="confidential" selected>기밀</option>
+            <option value="top_secret">극비</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label>설명</label>
+          <input type="text" name="description" class="form-control" placeholder="예: 2026년 신제품 도면">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary">파일 등록 (추적 시작)</button>
+    </form>
+  </div>
+</div>
+
+{{if .Detections}}
+<div class="card">
+  <div class="card-header">최근 탐지 이력</div>
+  <table class="table">
+    <thead><tr><th>시각</th><th>원본 파일</th><th>발견된 이름</th><th>발견 경로</th><th>호스트</th><th>이벤트</th><th>프로세스</th></tr></thead>
+    <tbody>
+    {{range .Detections}}
+    <tr style="background:{{if eq .Sensitivity "top_secret"}}#fff0f0{{else if eq .Sensitivity "confidential"}}#fff8e1{{else}}#f0f9ff{{end}};">
+      <td>{{.DetectedAt.Format "2006-01-02 15:04:05"}}</td>
+      <td><strong>{{.OriginalName}}</strong></td>
+      <td>{{.FoundName}}</td>
+      <td style="font-size:0.8rem;">{{.FoundPath}}</td>
+      <td>{{.Hostname}}</td>
+      <td><span class="badge badge-warning">{{.EventType}}</span></td>
+      <td>{{.ProcessName}}</td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{end}}

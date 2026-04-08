@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:8080/health)",
+      "Bash(sc query:*)",
+      "Bash(C:/pgsql/bin/pg_ctl.exe -D C:/pgsql/data status)"
+    ]
+  }
+}

@@ -194,6 +194,12 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Post("/admin/monitoring/disguise/add", deps.MonitorHandler.AddDisguiseRule)
 		r.Post("/admin/monitoring/disguise/{id}/delete", deps.MonitorHandler.DeleteDisguiseRule)
 
+		// File tracking
+		r.Get("/admin/tracking", deps.PageHandler.AdminTrackingPage)
+		r.Post("/admin/tracking/add", deps.PageHandler.AdminTrackingAdd)
+		r.Post("/admin/tracking/{id}/delete", deps.PageHandler.AdminTrackingDelete)
+		r.Get("/admin/tracking/{id}/detections", deps.PageHandler.AdminTrackingDetections)
+
 		// 2FA setup
 		r.Get("/account/2fa", deps.PageHandler.TwoFactorPage)
 		r.Post("/account/2fa/setup", deps.PageHandler.TwoFactorSetup)

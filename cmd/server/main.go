@@ -19,6 +19,7 @@ import (
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/folder"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/tracking"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/ueba"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/vault"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/web"
@@ -60,6 +61,58 @@ func (b *uebaBridge) AnalyzeEvent(ctx context.Context, evt endpoint.BehaviorEven
 		result[i] = endpoint.BehaviorRiskFactor{Factor: f.Factor, Weight: f.Weight, Detail: f.Detail}
 	}
 	return result
+}
+
+// trackerBridge adapts tracking.Tracker to web.FileTrackerUI interface.
+type trackerBridge struct {
+	tracker *tracking.Tracker
+}
+
+func (b *trackerBridge) List(ctx context.Context) ([]web.TrackedFileView, error) {
+	files, err := b.tracker.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]web.TrackedFileView, len(files))
+	for i, f := range files {
+		result[i] = web.TrackedFileView{
+			ID: f.ID, OriginalName: f.OriginalName, SHA256Hash: f.SHA256Hash,
+			Sensitivity: f.Sensitivity, Description: f.Description, IsActive: f.IsActive,
+		}
+	}
+	return result, nil
+}
+
+func (b *trackerBridge) GetAllDetections(ctx context.Context, limit int) ([]web.DetectionView, error) {
+	return b.convertDetections(b.tracker.GetAllDetections(ctx, limit))
+}
+
+func (b *trackerBridge) GetDetections(ctx context.Context, trackedFileID int64, limit int) ([]web.DetectionView, error) {
+	return b.convertDetections(b.tracker.GetDetections(ctx, trackedFileID, limit))
+}
+
+func (b *trackerBridge) convertDetections(dets []tracking.Detection, err error) ([]web.DetectionView, error) {
+	if err != nil {
+		return nil, err
+	}
+	result := make([]web.DetectionView, len(dets))
+	for i, d := range dets {
+		result[i] = web.DetectionView{
+			ID: d.ID, TrackedFileID: d.TrackedFileID, OriginalName: d.OriginalName,
+			Sensitivity: d.Sensitivity, FoundName: d.FoundName, FoundPath: d.FoundPath,
+			Hostname: d.Hostname, EventType: d.EventType, ProcessName: d.ProcessName,
+			DetectedAt: d.DetectedAt,
+		}
+	}
+	return result, nil
+}
+
+func (b *trackerBridge) Register(ctx context.Context, name, sha256, md5, sensitivity, description string, userID int64) error {
+	return b.tracker.Register(ctx, name, sha256, md5, sensitivity, description, userID)
+}
+
+func (b *trackerBridge) Unregister(ctx context.Context, id int64) error {
+	return b.tracker.Unregister(ctx, id)
 }
 
 func main() {
@@ -193,6 +246,11 @@ func run(logger *slog.Logger) error {
 	bridge := &uebaBridge{analyzer: uebaAnalyzer}
 	endpointHandler.SetBehaviorAnalyzer(bridge)
 
+	// File tracking (hash-based)
+	fileTracker := tracking.NewTracker(pool, logger)
+	endpointHandler.SetFileTracker(fileTracker)
+	trackerBridge := &trackerBridge{tracker: fileTracker}
+
 	// Page handler (HTML templates)
 	pageHandler, err := web.NewPageHandler(web.PageHandlerDeps{
 		DB:            pool,
@@ -205,6 +263,7 @@ func run(logger *slog.Logger) error {
 		AlertRepo:      alertRepo,
 		MonitorHandler: monHandler,
 		UEBAAnalyzer:   bridge,
+		FileTracker:    trackerBridge,
 		PSKConfigured:  cfg.OsqueryPSK != "",
 		Logger:        logger,
 	})
