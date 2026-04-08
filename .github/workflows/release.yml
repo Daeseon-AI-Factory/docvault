@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build server (Linux)
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/docvault-linux-amd64 ./cmd/server
+
+      - name: Build server (Windows)
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o dist/docvault-windows-amd64.exe ./cmd/server
+
+      - name: Build clipboard agent (Windows)
+        run: GOOS=windows GOARCH=amd64 go build -o dist/docvault-clip-windows-amd64.exe ./cmd/clipagent
+
+      - name: Build clipboard agent (macOS Intel)
+        run: GOOS=darwin GOARCH=amd64 go build -o dist/docvault-clip-darwin-amd64 ./cmd/clipagent
+
+      - name: Build clipboard agent (macOS Apple Silicon)
+        run: GOOS=darwin GOARCH=arm64 go build -o dist/docvault-clip-darwin-arm64 ./cmd/clipagent
+
+      - name: Package deploy configs
+        run: tar czf dist/deploy-configs.tar.gz deploy/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/docvault-linux-amd64
+            dist/docvault-windows-amd64.exe
+            dist/docvault-clip-windows-amd64.exe
+            dist/docvault-clip-darwin-amd64
+            dist/docvault-clip-darwin-arm64
+            dist/deploy-configs.tar.gz
