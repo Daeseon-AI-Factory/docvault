@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DocVault — Document Security & Endpoint Monitoring</title>
+  <meta name="description" content="On-premise document security system that monitors everything, blocks nothing. Replace expensive DRM with lightweight detection.">
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --bg2: #12121a;
+      --bg3: #1a1a2e;
+      --accent: #6366f1;
+      --accent2: #818cf8;
+      --accent-glow: rgba(99,102,241,0.15);
+      --green: #22c55e;
+      --red: #ef4444;
+      --orange: #f59e0b;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --border: #1e293b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* Nav */
+    nav {
+      position: fixed; top: 0; width: 100%; z-index: 100;
+      background: rgba(10,10,15,0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 2rem;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .nav-brand { font-size: 1.25rem; font-weight: 700; color: #fff; text-decoration: none; }
+    .nav-brand span { color: var(--accent); }
+    .nav-links { display: flex; gap: 2rem; }
+    .nav-links a { color: var(--text2); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .nav-links a:hover { color: #fff; }
+    .nav-cta {
+      background: var(--accent); color: #fff; padding: 0.5rem 1.25rem;
+      border-radius: 6px; text-decoration: none; font-size: 0.875rem; font-weight: 500;
+      transition: background 0.2s;
+    }
+    .nav-cta:hover { background: var(--accent2); }
+
+    /* Hero */
+    .hero {
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center;
+      padding: 6rem 2rem 4rem;
+      position: relative;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+      width: 800px; height: 800px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-badge {
+      display: inline-block;
+      background: var(--bg3); border: 1px solid var(--border);
+      padding: 0.35rem 1rem; border-radius: 20px;
+      font-size: 0.8rem; color: var(--accent2);
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      font-weight: 800;
+      line-height: 1.1;
+      max-width: 800px;
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 .highlight { color: var(--accent); }
+    .hero p {
+      font-size: 1.2rem; color: var(--text2);
+      max-width: 600px; margin-bottom: 2.5rem;
+    }
+    .hero-buttons { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+    .btn-primary {
+      background: var(--accent); color: #fff;
+      padding: 0.875rem 2rem; border-radius: 8px;
+      font-size: 1rem; font-weight: 600; text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(99,102,241,0.3); }
+    .btn-outline {
+      border: 1px solid var(--border); color: var(--text);
+      padding: 0.875rem 2rem; border-radius: 8px;
+      font-size: 1rem; text-decoration: none;
+      transition: border-color 0.2s;
+    }
+    .btn-outline:hover { border-color: var(--accent); }
+
+    .hero-stats {
+      display: flex; gap: 3rem; margin-top: 4rem;
+      padding-top: 2rem; border-top: 1px solid var(--border);
+    }
+    .hero-stat .num { font-size: 2rem; font-weight: 700; color: #fff; }
+    .hero-stat .label { font-size: 0.8rem; color: var(--text2); }
+
+    /* Sections */
+    section { padding: 6rem 2rem; max-width: 1200px; margin: 0 auto; }
+    .section-label {
+      font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--accent); font-weight: 600; margin-bottom: 0.5rem;
+    }
+    section h2 {
+      font-size: 2.5rem; font-weight: 700; margin-bottom: 1rem;
+      line-height: 1.2;
+    }
+    section > p { color: var(--text2); font-size: 1.1rem; max-width: 600px; margin-bottom: 3rem; }
+
+    /* Problem */
+    .problem-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;
+    }
+    .problem-card {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+      padding: 2rem; position: relative; overflow: hidden;
+    }
+    .problem-card.bad { border-left: 3px solid var(--red); }
+    .problem-card.good { border-left: 3px solid var(--green); }
+    .problem-card h3 { font-size: 1.1rem; margin-bottom: 0.75rem; }
+    .problem-card ul { list-style: none; }
+    .problem-card li {
+      padding: 0.4rem 0; font-size: 0.9rem; color: var(--text2);
+      padding-left: 1.5rem; position: relative;
+    }
+    .problem-card.bad li::before { content: '✕'; position: absolute; left: 0; color: var(--red); }
+    .problem-card.good li::before { content: '✓'; position: absolute; left: 0; color: var(--green); }
+
+    /* Features */
+    .features-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;
+    }
+    .feature-card {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+      padding: 1.75rem;
+      transition: border-color 0.3s, transform 0.3s;
+    }
+    .feature-card:hover { border-color: var(--accent); transform: translateY(-4px); }
+    .feature-icon {
+      width: 48px; height: 48px; border-radius: 10px;
+      background: var(--accent-glow); border: 1px solid rgba(99,102,241,0.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.5rem; margin-bottom: 1rem;
+    }
+    .feature-card h3 { font-size: 1rem; margin-bottom: 0.5rem; }
+    .feature-card p { font-size: 0.85rem; color: var(--text2); }
+
+    /* Architecture */
+    .arch-diagram {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+      padding: 3rem; text-align: center;
+    }
+    .arch-diagram pre {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.85rem; color: var(--accent2);
+      line-height: 1.8; display: inline-block; text-align: left;
+    }
+
+    /* Tech stack */
+    .tech-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem;
+    }
+    .tech-item {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 1.25rem; text-align: center;
+    }
+    .tech-item .name { font-weight: 600; font-size: 0.95rem; }
+    .tech-item .desc { font-size: 0.8rem; color: var(--text2); margin-top: 0.25rem; }
+
+    /* Anomalies table */
+    .anomaly-table {
+      width: 100%; border-collapse: collapse;
+      background: var(--bg2); border-radius: 12px; overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .anomaly-table th {
+      background: var(--bg3); padding: 0.75rem 1rem;
+      text-align: left; font-size: 0.75rem; text-transform: uppercase;
+      color: var(--text2); letter-spacing: 0.05em;
+    }
+    .anomaly-table td { padding: 0.75rem 1rem; border-top: 1px solid var(--border); font-size: 0.9rem; }
+    .score { font-weight: 700; }
+    .score.critical { color: var(--red); }
+    .score.high { color: var(--orange); }
+    .score.medium { color: var(--accent2); }
+    .score.low { color: var(--text2); }
+
+    /* CTA */
+    .cta {
+      text-align: center; padding: 6rem 2rem;
+      background: linear-gradient(180deg, transparent, var(--accent-glow), transparent);
+    }
+    .cta h2 { font-size: 2.5rem; margin-bottom: 1rem; }
+    .cta p { color: var(--text2); font-size: 1.1rem; margin-bottom: 2rem; }
+
+    /* Footer */
+    footer {
+      text-align: center; padding: 2rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.8rem; color: var(--text2);
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .problem-grid, .features-grid { grid-template-columns: 1fr; }
+      .hero-stats { flex-direction: column; gap: 1.5rem; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="#" class="nav-brand">Doc<span>Vault</span></a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#ueba">UEBA</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#tech">Tech Stack</a>
+  </div>
+  <a href="https://github.com/JasonAIFactory/Product024_JasonDRM" class="nav-cta">View on GitHub</a>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-badge">Open Source &middot; On-Premise &middot; Zero User Impact</div>
+  <h1>Document Security That <span class="highlight">Monitors Everything</span>, Blocks Nothing</h1>
+  <p>On-premise endpoint monitoring for manufacturing & engineering teams. Replace $50K/year DRM solutions with lightweight, detection-based security.</p>
+  <div class="hero-buttons">
+    <a href="https://github.com/JasonAIFactory/Product024_JasonDRM" class="btn-primary">Get Started</a>
+    <a href="#features" class="btn-outline">See Features</a>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="num">12,200+</div><div class="label">Lines of Go</div></div>
+    <div class="hero-stat"><div class="num">97</div><div class="label">Test Functions</div></div>
+    <div class="hero-stat"><div class="num">~50MB</div><div class="label">RAM Usage</div></div>
+    <div class="hero-stat"><div class="num">21MB</div><div class="label">Single Binary</div></div>
+  </div>
+</div>
+
+<!-- Problem / Solution -->
+<section>
+  <div class="section-label">The Problem</div>
+  <h2>Traditional DRM is Broken</h2>
+  <p>Korean DRM solutions like Fasoo and Softcamp cost a fortune, slow down PCs, and frustrate employees.</p>
+  <div class="problem-grid">
+    <div class="problem-card bad">
+      <h3>Traditional DRM</h3>
+      <ul>
+        <li>Kernel-mode drivers crash PCs</li>
+        <li>400MB+ RAM per endpoint</li>
+        <li>$50K+/year licensing</li>
+        <li>Blocks file access, breaks workflows</li>
+        <li>Complex deployment, agent conflicts</li>
+        <li>Employees find workarounds anyway</li>
+      </ul>
+    </div>
+    <div class="problem-card good">
+      <h3>DocVault</h3>
+      <ul>
+        <li>User-mode only, zero OS hooks</li>
+        <li>~50MB RAM, single binary</li>
+        <li>Open source, self-hosted</li>
+        <li>Never blocks &mdash; detect & alert</li>
+        <li>osquery + single Go binary</li>
+        <li>Employees don't know it exists</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section id="features">
+  <div class="section-label">Features</div>
+  <h2>Complete Endpoint Visibility</h2>
+  <p>Every file operation, every clipboard copy, every USB insert — tracked in real time, without touching user workflows.</p>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">&#128196;</div>
+      <h3>File Operation Tracking</h3>
+      <p>Create, modify, delete, rename, move — all file operations captured via osquery with SHA-256 hashes.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128172;</div>
+      <h3>Messenger Detection</h3>
+      <p>KakaoTalk, Telegram, Slack, Discord, Teams — detect when messengers access sensitive documents.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128247;</div>
+      <h3>Clipboard Monitoring</h3>
+      <p>Cross-platform agent (Windows + macOS) tracks every copy event with source app detection.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128190;</div>
+      <h3>USB & Network Copy</h3>
+      <p>Detect files written to removable drives or network shares. Alert on sensitive file exfiltration.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128270;</div>
+      <h3>Extension Disguise Detection</h3>
+      <p>Catch users renaming .dwg to .jpg. SHA-256 hash comparison reveals content regardless of filename.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128274;</div>
+      <h3>AES-256 File Vault</h3>
+      <p>Streaming encryption with envelope key management. Files never fully buffered in memory.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128200;</div>
+      <h3>Real-time Dashboard</h3>
+      <p>Server-Sent Events push alerts to the browser instantly. No refresh needed.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#127919;</div>
+      <h3>Hash-based File Tracking</h3>
+      <p>Register critical files by SHA-256. Track them across all endpoints regardless of rename or move.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">&#128272;</div>
+      <h3>Two-Factor Authentication</h3>
+      <p>TOTP (Google Authenticator) with 8 recovery codes. RFC 6238 compliant, zero dependencies.</p>
+    </div>
+  </div>
+</section>
+
+<!-- UEBA -->
+<section id="ueba">
+  <div class="section-label">Intelligence</div>
+  <h2>User Behavior Analytics (UEBA)</h2>
+  <p>Machine-learned baselines per user. Automatic anomaly detection with weighted risk scoring.</p>
+  <table class="anomaly-table">
+    <thead>
+      <tr><th>Anomaly Type</th><th>Risk Score</th><th>Example</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Extension Disguise</td><td class="score critical">30</td><td>Renamed <code>.dwg</code> to <code>.jpg</code></td></tr>
+      <tr><td>Messenger File Leak</td><td class="score critical">25</td><td>KakaoTalk accessing CAD file</td></tr>
+      <tr><td>Bulk Download</td><td class="score high">20</td><td>2x daily average file access</td></tr>
+      <tr><td>Bulk Clipboard</td><td class="score high">15</td><td>Repeated copy events</td></tr>
+      <tr><td>Rapid Access</td><td class="score medium">12</td><td>50 files opened in 5 minutes</td></tr>
+      <tr><td>After-hours Access</td><td class="score medium">10</td><td>Activity at 11:30 PM</td></tr>
+      <tr><td>Weekend Access</td><td class="score medium">8</td><td>Saturday file download</td></tr>
+      <tr><td>Unusual File Type</td><td class="score medium">8</td><td>Accountant opening .dwg</td></tr>
+      <tr><td>New IP / Hostname</td><td class="score low">5</td><td>Login from unknown device</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- Architecture -->
+<section id="architecture">
+  <div class="section-label">Architecture</div>
+  <h2>Simple, Deployable, Maintainable</h2>
+  <p>Single Go binary. Single PostgreSQL database. No Elasticsearch, no Redis, no Kafka. Designed for 40-user teams.</p>
+  <div class="arch-diagram">
+    <pre>
+  Employee PCs                    DocVault Server                 Admin
+ ┌─────────────┐                ┌──────────────────┐          ┌──────────┐
+ │  osquery     │──file events─→│                  │          │          │
+ │  (5.x)      │──usb events──→│  Go HTTP Server  │──SSE───→ │Dashboard │
+ │             │──proc events─→│       :8080       │          │ (htmx)   │
+ ├─────────────┤                │                  │          │          │
+ │  clipagent   │──clip events─→│  ┌────────────┐  │          │ Alerts   │
+ │  (Go binary) │               │  │Alert Engine │──Slack──→  │ Reports  │
+ └─────────────┘                │  │UEBA Analyzer│  │          │ Tracking │
+                                │  │File Tracker │  │          └──────────┘
+                                │  └────────────┘  │
+                                │         │        │
+                                │    PostgreSQL    │
+                                │    (single DB)   │
+                                └──────────────────┘
+    </pre>
+  </div>
+</section>
+
+<!-- Tech Stack -->
+<section id="tech">
+  <div class="section-label">Tech Stack</div>
+  <h2>Built With</h2>
+  <div class="tech-grid">
+    <div class="tech-item"><div class="name">Go 1.22+</div><div class="desc">Server + Agent</div></div>
+    <div class="tech-item"><div class="name">PostgreSQL 16</div><div class="desc">Single database</div></div>
+    <div class="tech-item"><div class="name">chi</div><div class="desc">HTTP router</div></div>
+    <div class="tech-item"><div class="name">pgx</div><div class="desc">PostgreSQL driver</div></div>
+    <div class="tech-item"><div class="name">htmx</div><div class="desc">Frontend interactivity</div></div>
+    <div class="tech-item"><div class="name">AES-256-CTR</div><div class="desc">Streaming encryption</div></div>
+    <div class="tech-item"><div class="name">JWT + TOTP</div><div class="desc">Auth + 2FA</div></div>
+    <div class="tech-item"><div class="name">SSE</div><div class="desc">Real-time events</div></div>
+    <div class="tech-item"><div class="name">osquery</div><div class="desc">Endpoint telemetry</div></div>
+    <div class="tech-item"><div class="name">Win32 API</div><div class="desc">Clipboard (Windows)</div></div>
+    <div class="tech-item"><div class="name">pbpaste</div><div class="desc">Clipboard (macOS)</div></div>
+    <div class="tech-item"><div class="name">GitHub Actions</div><div class="desc">CI/CD + Releases</div></div>
+  </div>
+</section>
+
+<!-- CTA -->
+<div class="cta">
+  <h2>Ready to Secure Your Documents?</h2>
+  <p>Deploy in 10 minutes. Single binary. No vendor lock-in.</p>
+  <div class="hero-buttons">
+    <a href="https://github.com/JasonAIFactory/Product024_JasonDRM" class="btn-primary">View Source on GitHub</a>
+    <a href="https://github.com/JasonAIFactory/Product024_JasonDRM/releases" class="btn-outline">Download Latest Release</a>
+  </div>
+</div>
+
+<footer>
+  &copy; 2026 DocVault &middot; Built by <a href="https://github.com/JasonAIFactory" style="color:var(--accent);">Jason AI Factory</a>
+</footer>
+
+</body>
+</html>
