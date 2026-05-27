@@ -1,204 +1,21 @@
-# DocVault - Document Security & Audit System
+# DocVault — Implementation Spec
 
-## Project Overview
-On-premise document vault with endpoint monitoring for 40-user manufacturing/engineering teams.
-Replaces expensive DRM solutions (Fasoo/Softcamp) with a lightweight detection-based system.
+이 문서는 DocVault의 내부 스펙을 담는다. 개요·아키텍처·결정 사항은 다른 문서를 참고한다.
 
-## Architecture Decision Records
+- 개요·실행 방법: [README](../README.md)
+- 시스템 구성과 데이터 흐름: [ARCHITECTURE](ARCHITECTURE.md)
+- 설계 결정과 트레이드오프: [DECISIONS](DECISIONS.md)
+- 알려진 한계: [LIMITATIONS](LIMITATIONS.md)
 
-### ADR-001: Go over Spring/Kotlin
-- File I/O streaming (io.Reader/Writer) is native and efficient for large CAD files
-- Single 15MB binary deployment, no JVM overhead
-- ~50MB RAM runtime vs ~400MB JVM idle
-- Better fit for Toronto AI startup job market
+이 문서가 다루는 것:
 
-### ADR-002: PostgreSQL only, no Elasticsearch/Redis/Kafka
-- 40 users, ~50K events/day — PostgreSQL handles everything
-- Full-text search via tsvector is sufficient
-- Adding more services triples ops complexity for zero benefit
-
-### ADR-003: Detection over Prevention
-- osquery (user-mode) detects and logs file operations
-- No kernel-mode drivers, no DLL injection, no OS hooks
-- Near-zero performance impact on employee PCs (~50MB RAM, ~1% CPU)
-- Tradeoff: cannot block actions in real-time, only detect after the fact
-
-### ADR-004: htmx over React for frontend
-- Server-rendered HTML with htmx for interactivity
-- No build step, no node_modules, no webpack
-- Go templates handle all rendering
-- Faster to build, simpler to maintain
-
-### ADR-005: On-premise over cloud
-- Document security product — files should stay on company network
-- Single server, all services on one box
-- Lower TCO than cloud for 40 users
-
-## Tech Stack
-- **Language**: Go 1.22+
-- **Database**: PostgreSQL 16
-- **Router**: chi (github.com/go-chi/chi/v5)
-- **DB Driver**: pgx (github.com/jackc/pgx/v5)
-- **SQL**: sqlc for type-safe query generation
-- **Auth**: JWT (github.com/golang-jwt/jwt/v5)
-- **Crypto**: stdlib crypto/aes, crypto/cipher (AES-256-GCM)
-- **Hashing**: stdlib crypto/sha256 (file integrity), golang.org/x/crypto/bcrypt (passwords)
-- **Frontend**: htmx + Go html/template
-- **Endpoint Agent**: osquery 5.x (pre-built, we only configure)
-- **Clipboard Agent**: Custom Go binary using golang.org/x/sys/windows
-- **Reverse Proxy**: Nginx
-- **Migration**: golang-migrate
-- **Logging**: stdlib log/slog (structured JSON logging)
-- **UUID**: github.com/google/uuid
-
-## Project Structure
-```
-docvault/
-├── CLAUDE.md                    # This file
-├── DIRECTION_GUARD.md           # Scope guard — what NOT to build
-├── go.mod
-├── go.sum
-├── cmd/
-│   ├── server/
-│   │   └── main.go              # Entry point, wire dependencies
-│   └── clipagent/
-│       └── main.go              # Windows clipboard monitoring agent
-├── internal/
-│   ├── config/
-│   │   └── config.go            # Env/file-based configuration
-│   ├── database/
-│   │   ├── db.go                # PostgreSQL connection pool
-│   │   └── migrations/          # SQL migration files
-│   │       ├── 001_users.up.sql
-│   │       ├── 001_users.down.sql
-│   │       ├── 002_folders_files.up.sql
-│   │       ├── 002_folders_files.down.sql
-│   │       ├── 003_audit_logs.up.sql
-│   │       ├── 003_audit_logs.down.sql
-│   │       ├── 004_endpoint_events.up.sql
-│   │       ├── 004_endpoint_events.down.sql
-│   │       ├── 005_alerts.up.sql
-│   │       ├── 005_alerts.down.sql
-│   │       ├── 006_encryption_keys.up.sql
-│   │       ├── 006_encryption_keys.down.sql
-│   │       ├── 007_agent_registry.up.sql
-│   │       ├── 007_agent_registry.down.sql
-│   │       └── 008_hostname_mapping.up.sql
-│   ├── auth/
-│   │   ├── jwt.go               # JWT generation, validation, refresh
-│   │   ├── jwt_test.go          # JWT round-trip, expiry, invalid sig tests
-│   │   ├── middleware.go        # Auth middleware (extract user from JWT)
-│   │   └── handler.go           # Login, logout, refresh endpoints
-│   ├── user/
-│   │   ├── model.go             # User struct, roles enum
-│   │   ├── repository.go        # DB queries (CRUD)
-│   │   └── handler.go           # Admin user management endpoints
-│   ├── vault/
-│   │   ├── encryption.go        # AES-256-GCM encrypt/decrypt streaming
-│   │   ├── encryption_test.go   # Round-trip, wrong key, tamper detection
-│   │   ├── storage.go           # Disk storage (write/read encrypted blobs)
-│   │   ├── storage_test.go      # Store/retrieve, concurrent uploads
-│   │   ├── keymanager.go        # Envelope encryption, master key handling
-│   │   ├── model.go             # File, FileVersion, Folder structs
-│   │   ├── repository.go        # DB queries for files, folders, versions
-│   │   └── handler.go           # Upload, download, checkout, checkin, delete
-│   ├── folder/
-│   │   ├── model.go             # Folder, FolderPermission structs
-│   │   ├── repository.go        # DB queries
-│   │   └── handler.go           # Folder CRUD, permission management
-│   ├── audit/
-│   │   ├── model.go             # AuditLog struct, action enum
-│   │   ├── middleware.go        # Auto-logging middleware (cross-cutting)
-│   │   ├── repository.go        # DB queries (insert, search, aggregate)
-│   │   ├── repository_test.go   # Unified timeline, search tests
-│   │   └── handler.go           # User audit view, file audit view, search, dashboard stats
-│   ├── endpoint/
-│   │   ├── model.go             # EndpointEvent struct, event type enum
-│   │   ├── osquery.go           # osquery event receiver, normalizer
-│   │   ├── osquery_test.go      # Event normalization, drive detection tests
-│   │   ├── clipboard.go         # Clipboard event receiver
-│   │   ├── repository.go        # DB queries for endpoint events
-│   │   └── handler.go           # POST /api/events/osquery, /api/events/clipboard
-│   ├── alert/
-│   │   ├── model.go             # Alert, AlertRule structs
-│   │   ├── engine.go            # Rule evaluation engine
-│   │   ├── engine_test.go       # All rule type tests
-│   │   ├── notifier.go          # Slack webhook, email notifications
-│   │   ├── repository.go        # DB queries
-│   │   └── handler.go           # Alert list, acknowledge endpoints
-│   ├── agent/
-│   │   ├── model.go             # AgentRegistration, HostnameMapping structs
-│   │   ├── registry.go          # Agent enrollment, heartbeat, status
-│   │   ├── repository.go        # DB queries
-│   │   └── handler.go           # POST /api/agents/enroll, GET /api/admin/agents
-│   ├── retention/
-│   │   ├── cleaner.go           # Data retention: partition mgmt + archival
-│   │   └── cleaner_test.go
-│   ├── apierror/
-│   │   └── error.go             # Standardized API error response
-│   └── web/
-│       ├── router.go            # chi router setup, middleware chain
-│       ├── templates/           # Go html/template files
-│       │   ├── layout.html      # Base layout with nav
-│       │   ├── login.html
-│       │   ├── dashboard.html
-│       │   ├── files.html       # File browser
-│       │   ├── file_detail.html # File detail + versions
-│       │   ├── audit_user.html  # User timeline
-│       │   ├── audit_file.html  # File timeline
-│       │   ├── audit_search.html
-│       │   ├── admin_users.html
-│       │   ├── admin_alerts.html
-│       │   └── admin_agents.html
-│       └── static/
-│           ├── htmx.min.js
-│           └── style.css
-├── deploy/
-│   ├── osquery/
-│   │   ├── osquery.conf         # osquery configuration
-│   │   ├── osquery.flags        # osquery daemon flags
-│   │   └── enrollment.ps1       # PowerShell: install + enroll agent
-│   ├── clipagent/
-│   │   └── install.ps1          # PowerShell: install clipboard agent
-│   ├── nginx/
-│   │   └── docvault.conf        # Nginx reverse proxy config
-│   ├── systemd/
-│   │   └── docvault.service     # systemd service file
-│   └── backup/
-│       └── backup.sh            # Daily pg_dump + rsync script
-└── docs/
-    ├── DocVault_Architecture.docx
-    └── DocVault_UserFlows.docx
-```
-
-## Development Workflow
-
-### Build & Run
-```bash
-# Build server
-go build -o bin/docvault ./cmd/server
-
-# Run with config
-DOCVAULT_DB_URL="postgres://docvault_app:pass@localhost:5432/docvault" \
-DOCVAULT_MASTER_KEY="your-32-byte-hex-key" \
-DOCVAULT_VAULT_PATH="/vault" \
-./bin/docvault serve
-
-# Run migrations
-./bin/docvault migrate up
-
-# Build clipboard agent (cross-compile for Windows)
-GOOS=windows GOARCH=amd64 go build -o bin/docvault-clip.exe ./cmd/clipagent
-```
-
-### Testing
-```bash
-go test ./...
-go test -race ./...              # Race detector
-go test -count=1 ./internal/vault/...  # No cache
-```
-
----
+- DB 스키마 인덱스 (성능 임계 영역)
+- 표준화된 API 에러 응답
+- 호스트네임 ↔ 사용자 매핑
+- 에이전트 인증 프로토콜과 등록 흐름
+- osquery 설정 스펙과 이벤트 정규화
+- Windows 클립보드 에이전트 스펙
+- 데이터 보존 정책
 
 ## Database Schema Addendum: Indexes
 

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "h=$(git log -1 --format=%h 2>/dev/null); s=$(git log -1 --format=%s 2>/dev/null); [ -z \"$h\" ] && exit 0; recent=$(git log --since=\"3 minutes ago\" --oneline -1 2>/dev/null); [ -z \"$recent\" ] && exit 0; if grep -rq \"$h\" docs/troubleshooting.md content/logs/ 2>/dev/null; then exit 0; fi; if echo \"$s\" | grep -qE '\\[(no|skip)-log\\]'; then printf '<!-- skipped: %s %s -->\\n' \"$h\" \"$s\" >> docs/troubleshooting.md; exit 0; fi; jq -n --arg h \"$h\" --arg s \"$s\" '{decision:\"block\",reason:(\"Recent commit \" + $h + \" (\" + $s + \") is not yet logged.\\n\\nPer CLAUDE.md project log rules:\\n- If NON-TRIVIAL: write BOTH docs/troubleshooting.md entry AND content/logs/<project>/<date>-<slug>.mdx in this same turn (follow the 7 anti-hallucination rules — paste literal symptom, verify cause, use the commit hash above verbatim).\\n- If ROUTINE (typo / lint / formatting / dep bump without behavior change): append this one line to docs/troubleshooting.md to silence the hook:\\n\\n    <!-- skipped: \" + $h + \" \" + $s + \" -->\\n\\nAfter writing, commit the changes. The next Stop check will see the hash in the file and let the turn end.\")}'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

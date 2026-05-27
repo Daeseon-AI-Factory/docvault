@@ -1,38 +1,23 @@
-# DocVault - Document Security & Audit System
+# DocVault — Developer Guide
 
-## Project Overview
-On-premise document vault with endpoint monitoring for 40-user manufacturing/engineering teams.
-Replaces expensive DRM solutions (Fasoo/Softcamp) with a lightweight detection-based system.
+소규모 팀용 내부자 위협 이벤트 수집·조회 도구.
+osquery + 자체 클립보드 에이전트가 엔드포인트 활동을 수집해 PostgreSQL에 저장하고
+htmx 기반 웹 UI로 조회한다. DB 트리거 기반 해시 체인이 어플리케이션 레벨 변조를
+탐지한다. 임계값 룰 기반 이상 행위 점수화(머신러닝 아님).
 
-## Architecture Decision Records
+## 정확한 위치
 
-### ADR-001: Go over Spring/Kotlin
-- File I/O streaming (io.Reader/Writer) is native and efficient for large CAD files
-- Single 15MB binary deployment, no JVM overhead
-- ~50MB RAM runtime vs ~400MB JVM idle
-- Better fit for Toronto AI startup job market
+이 문서는 AI 어시스턴트가 코드를 작성·수정할 때 따라야 할 컨벤션과 패턴을 담는다.
+프로덕트 설명·아키텍처·결정 사항·한계는 별도 문서를 참고한다:
 
-### ADR-002: PostgreSQL only, no Elasticsearch/Redis/Kafka
-- 40 users, ~50K events/day — PostgreSQL handles everything
-- Full-text search via tsvector is sufficient
-- Adding more services triples ops complexity for zero benefit
+- 개요·실행: [README.md](README.md)
+- 시스템 흐름: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- 설계 결정 (ADR): [docs/DECISIONS.md](docs/DECISIONS.md)
+- 알려진 한계: [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
+- 내부 스펙: [docs/SPEC.md](docs/SPEC.md)
 
-### ADR-003: Detection over Prevention
-- osquery (user-mode) detects and logs file operations
-- No kernel-mode drivers, no DLL injection, no OS hooks
-- Near-zero performance impact on employee PCs
-- Tradeoff: cannot block actions in real-time, only detect after the fact
-
-### ADR-004: htmx over React for frontend
-- Server-rendered HTML with htmx for interactivity
-- No build step, no node_modules, no webpack
-- Go templates handle all rendering
-- Faster to build, simpler to maintain
-
-### ADR-005: On-premise over cloud
-- Document security product — files should stay on company network
-- Single server, all services on one box
-- Lower TCO than cloud for 40 users
+이 도구가 **아닌** 것: DRM, UEBA(ML 기반), 법적 증거 시스템, 프로덕션 보안 제품.
+자세한 사항은 LIMITATIONS 참고.
 
 ## Tech Stack
 - **Language**: Go 1.22+
@@ -369,3 +354,59 @@ DOCVAULT_ALERT_EMAIL=admin@company.kr
 - [ ] Backup script runs successfully
 - [ ] osquery agents connect and send events
 - [ ] Alert notifications fire correctly
+
+
+
+
+## Project log (required, dual-write)
+
+When you fix or decide something non-trivial in this repo, write BOTH of these in the same turn as the commit:
+
+1. `docs/troubleshooting.md` — terse problem-indexed reference (Symptom / Cause / Fix / Commit / Pattern). Append a new entry below the `---` divider.
+2. `content/logs/<project-slug>/<YYYY-MM-DD>-<short-slug>.mdx` — dated narrative with frontmatter:
+
+```yaml
+---
+title: "Concrete one-line title"
+date: "YYYY-MM-DD"
+project: "docvault"
+kind: "troubleshoot | tech-retro | ux-retro | business | monetization | update"
+visibility: "public | unlisted | private"
+language: "en"
+summary: "One or two sentences."
+tags: ["topic", "stack"]
+---
+```
+
+### What counts as non-trivial
+
+LOG IT: build/deploy errors, hidden coupling, dependency migrations, architecture or infra decisions, design/copy choices made on judgment, strategy or pricing memos.
+
+DON'T LOG: routine renames, lint fixes, typo fixes, dependency bumps with no behavior change, formatting commits.
+
+### Anti-hallucination rules (non-negotiable)
+
+1. **Symptom is literal.** Paste the actual error/output in a fenced code block. No paraphrasing.
+2. **Cause is verified.** Only state what you read in the actual code or ran in the actual command. If you guessed, write `Hypothesis: ...` and `Verified by: ...`. If unverifiable, omit Cause or mark `Suspected:` with an explicit caveat.
+3. **Fix names actual files.** `git diff` is the source of truth. If `git diff` doesn't show the change, don't claim you made it.
+4. **Commit hash AFTER committing.** Use `git rev-parse HEAD` after the commit lands. Never write a hash that doesn't exist yet.
+5. **Date from git.** `git log -1 --format=%cI` for the commit time. For forward-looking entries (decisions being written in the moment), today's date from the session start. Never guess.
+6. **Pattern is rare.** Only write a Pattern line if a recurring lesson is obvious from this one incident. Padding it with generic advice is worse than omitting.
+7. **No fabricated metrics.** "Took about 60s" if you saw 60s. "Took 1m 23s exactly" only if you have the timestamp.
+
+### Visibility defaults by kind
+
+- `business`, `monetization` → `private` by default (strategy memos shouldn't ship accidentally)
+- `knowledge`-style facts → `unlisted` if you have such a type
+- Everything else → `public`
+
+Override per entry in frontmatter.
+
+### Skip rule for routine commits
+
+The Stop hook blocks the turn until the most recent commit is either logged OR explicitly marked routine. To skip without writing an entry:
+
+- Option A — put `[no-log]` (or `[skip-log]`) anywhere in the commit message. The hook auto-appends a `<!-- skipped: <hash> <subject> -->` line to `docs/troubleshooting.md` so it stops firing.
+- Option B — append the same `<!-- skipped: <hash> <subject> -->` line yourself, then commit. Same effect.
+
+Routine = typo fix, lint fix, formatting commit, dep bump without behavior change, file rename. Anything else: write the entry.

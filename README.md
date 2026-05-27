@@ -1,208 +1,113 @@
 # DocVault
 
-**On-premise document security & endpoint monitoring system** for 40-user manufacturing/engineering teams.
+소규모 팀(~100 엔드포인트)을 위한 자체 호스팅 내부자 위협 이벤트 수집·조회 도구.
 
-Replaces expensive Korean DRM solutions (Fasoo, Softcamp) with a lightweight **detection-based** approach — monitors everything, blocks nothing, zero impact on employee productivity.
+osquery와 자체 제작 클립보드 에이전트가 사용자 PC에서 활동을 수집해 HTTPS로 서버에 보낸다. 서버는 PostgreSQL에 저장하고 웹 UI에서 조회·검색할 수 있게 한다. DB 트리거가 모든 로그에 해시 체인을 걸어 어플리케이션 레벨의 변조를 탐지한다. 임계값 룰로 야간 접근·대량 다운로드 같은 패턴을 하이라이트한다.
 
-## Why DocVault?
+## 이것은
 
-| Traditional DRM | DocVault |
+- 엔드포인트 이벤트 수집기 (파일 작업, 클립보드, USB, 메신저 접근 등)
+- DB 트리거 기반 해시 체인이 적용된 감사 로그
+- 임계값 룰 기반 이상 행위 점수화
+- htmx 기반 조회 UI
+- (옵션) AES envelope encryption 적용 파일 저장소
+
+## 이것이 아닌
+
+- **DRM이 아니다.** 차단하지 않고 탐지만 한다.
+- **UEBA가 아니다.** 머신러닝 없이 임계값 룰 10종이다.
+- **법적 증거 시스템이 아니다.** 해시 체인은 어플리케이션 레벨 변조는 막지만 DB 관리자 권한으로는 우회 가능하다.
+- **프로덕션 보안 제품이 아니다.** 인증·지원·SLA 없는 개인 프로젝트다.
+
+자세한 한계는 [docs/LIMITATIONS.md](docs/LIMITATIONS.md)를 참고.
+
+## 빠른 실행
+
+```bash
+make build                                # bin/docvault 생성
+
+createdb docvault
+./bin/docvault migrate                    # 12개 마이그레이션 적용
+./bin/docvault seed                       # admin/admin1234! 계정 생성
+
+./bin/docvault serve                      # http://localhost:8080
+```
+
+환경 변수:
+```
+DOCVAULT_DB_URL=postgres://localhost/docvault
+DOCVAULT_MASTER_KEY=<hex-encoded 32 bytes>
+DOCVAULT_VAULT_PATH=/var/lib/docvault
+DOCVAULT_JWT_SECRET=<random string>
+DOCVAULT_LISTEN_ADDR=:8080
+```
+
+## 에이전트 (옵션)
+
+```bash
+# Windows 클립보드 에이전트
+make clipagent-windows
+docvault-clip.exe install                 # Windows 서비스 등록
+
+# macOS 클립보드 에이전트
+make clipagent-darwin
+
+# osquery
+cp deploy/osquery/* /etc/osquery/         # 또는 C:\ProgramData\osquery\
+```
+
+## 문서
+
+| 문서 | 내용 |
 |---|---|
-| Kernel-mode drivers, DLL injection | User-mode detection only |
-| ~400MB RAM (JVM), slow startup | ~50MB RAM, single binary |
-| $50K+/year license | Open source, self-hosted |
-| Blocks file access, breaks workflows | Never blocks — detect & alert |
-| Complex deployment, agent conflicts | Single binary + osquery |
+| [Architecture](docs/ARCHITECTURE.md) | 시스템 구성, 데이터 흐름, 핵심 패턴 |
+| [Decisions](docs/DECISIONS.md) | 주요 설계 결정과 트레이드오프 (ADR) |
+| [Limitations](docs/LIMITATIONS.md) | 알려진 결함과 미구현 영역 |
+| [Deployment](docs/DEPLOYMENT.md) | AWS EC2 배포 가이드 |
+| [Spec](docs/SPEC.md) | DB 스키마·API 에러·에이전트 프로토콜 상세 |
 
-## Key Features
+## 기술 스택
 
-### Endpoint Monitoring (Zero interference)
-- **File operations**: create, modify, delete, rename, copy — all tracked via osquery
-- **Messenger detection**: KakaoTalk, Telegram, Slack, Discord, Teams accessing documents
-- **Email attachment tracking**: Outlook, Thunderbird opening sensitive files
-- **USB copy detection**: files written to removable drives (E:, F:, G:, H:)
-- **Network share copy**: files written to UNC paths (\\\\server\\share)
-- **Clipboard monitoring**: copy events with source app detection (Windows + macOS)
-- **Screen capture detection**: SnippingTool, ShareX, Lightshot, Greenshot, PicPick
-- **Print job tracking**: spooler activity monitoring
-- **Extension disguise detection**: `.dwg` renamed to `.jpg` detected via hash comparison
-- **Cloud upload detection**: browser processes accessing document files
+- **Go** 1.22+ — 서버, 클립보드 에이전트
+- **PostgreSQL** 16 — 이벤트·감사 로그·해시 체인 트리거
+- **chi** — HTTP 라우팅
+- **pgx** — PostgreSQL 드라이버
+- **htmx** + Go html/template — UI
+- **osquery** 5.x — 외부 엔드포인트 에이전트
+- **AES-256** — envelope encryption (자세한 사항은 LIMITATIONS 참고)
 
-### File Tracking (SHA-256 Hash-based)
-- Register any file → SHA-256 hash computed automatically
-- Tracked across all endpoints regardless of rename/move/extension change
-- Detection log with hostname, path, process, timestamp
-- Sensitivity levels: Restricted, Confidential, Top Secret
-
-### User & Entity Behavior Analytics (UEBA)
-- Per-user behavioral baselines (30-day rolling window)
-- 10 anomaly types with weighted risk scoring (0-100):
-  - Extension disguise (30), Messenger file leak (25), Bulk download (20)
-  - Bulk clipboard (15), Rapid access (12), After-hours (10)
-  - Weekend access (8), Unusual file type (8), New IP/hostname (5)
-- Daily baseline recalculation (automatic at 2:00 AM)
-- Dashboard widget: Top 5 risky users with color-coded severity
-
-### Security
-- **AES-256 streaming encryption** — files never fully buffered in memory
-- **Envelope encryption** — per-file keys encrypted by master key
-- **Two-factor authentication (TOTP)** — Google Authenticator compatible, 8 recovery codes
-- **CSRF protection** — HMAC-signed tokens on all POST forms
-- **Login rate limiting** — 5 failures → 15-minute IP lockout
-- **JWT auto-refresh** — transparent cookie renewal within 5 minutes of expiry
-- **Audit middleware** — every authenticated request auto-logged with tamper-evident hash chain
-
-### Real-time Dashboard (SSE)
-- Server-Sent Events push endpoint/alert/audit events to connected browsers
-- Auto-reconnect with visual status indicator
-- New events flash-highlighted and prepended to tables
-
-### DB-driven Configuration
-- Monitored processes, file extensions, paths, disguise rules — all managed via Admin UI
-- No code changes needed to add new messenger apps or file types
-- 5-minute cache with auto-refresh
-
-## Architecture
-
-```
-Browser ──→ Nginx (TLS) ──→ DocVault Server ──→ PostgreSQL
-                                    ↑
-          osquery agents ───────────┘  POST /api/events/osquery
-          clipboard agents ─────────┘  POST /api/events/clipboard
-                                    ↓
-                              Alert Engine ──→ Slack / Email
-                              UEBA Analyzer ──→ Risk Scores
-                              File Tracker ──→ Hash Matching
-```
-
-## Tech Stack
-
-| Component | Technology |
-|---|---|
-| Language | Go 1.22+ |
-| Database | PostgreSQL 16 |
-| Router | chi |
-| Auth | JWT + bcrypt + TOTP (RFC 6238) |
-| Encryption | AES-256-CTR streaming + GCM envelope |
-| Frontend | htmx + Go html/template |
-| Endpoint Agent | osquery 5.x |
-| Clipboard Agent | Custom Go binary (Win32 API / macOS pbpaste) |
-| Real-time | Server-Sent Events (SSE) |
-
-## Project Stats
-
-- **12,200+ lines** of Go code
-- **66 source files**, 12 SQL migrations
-- **97 test functions** across 9 packages
-- **Cross-platform**: Windows (exe + service), macOS (Intel + Apple Silicon)
-- Single binary: **~21MB server**, **~9MB agent**
-
-## Quick Start
+## 테스트
 
 ```bash
-# Build
-make build                    # Server
-make clipagent-all            # Clipboard agents (Windows + macOS)
-
-# Database
-psql -U postgres -c "CREATE DATABASE docvault;"
-./bin/docvault migrate        # Apply 12 migrations
-./bin/docvault seed           # Create admin user + default alert rules
-
-# Run
-./bin/docvault serve          # http://localhost:8080
-                              # Login: admin / admin1234!
+make test-all       # 빌드 + vet + 9개 패키지 테스트
+make ci             # CI 파이프라인 동일
 ```
 
-## Agent Deployment
-
-### Clipboard Agent — Windows
-```powershell
-docvault-clip.exe install     # Register as Windows service (auto-start, auto-recovery)
-net start DocVaultClipAgent   # Start service
-```
-
-### Clipboard Agent — macOS
-```bash
-cp docvault-clip-mac /usr/local/bin/docvault-clip
-launchctl load ~/Library/LaunchAgents/com.docvault.clipagent.plist
-```
-
-### osquery
-```bash
-# Copy configs to C:\ProgramData\osquery\
-cp deploy/osquery/osquery.conf deploy/osquery/osquery.flags
-# osquery service auto-enrolls with DocVault server
-```
-
-## Project Structure
+## 프로젝트 구조
 
 ```
 cmd/
-  server/                 Entry point (serve, migrate, seed)
-  clipagent/              Cross-platform clipboard agent
-    agent.go              Shared logic (enroll, send, monitor loop)
-    clipboard_windows.go  Win32 API clipboard monitoring
-    clipboard_darwin.go   macOS pbpaste monitoring
-    service_windows.go    Windows SCM service management
-    service_darwin.go     macOS launchd support
-
+  server/           서버 진입점 (serve, migrate, seed)
+  clipagent/        Windows/macOS 클립보드 에이전트
 internal/
-  auth/                   JWT + bcrypt + TOTP + middleware
-  vault/                  AES-256 streaming encryption + storage
-  folder/                 Folder CRUD + permission hierarchy
-  audit/                  Auto-logging middleware + CSV export
-  endpoint/               osquery/clipboard ingestion + unified timeline
-  alert/                  Rule engine + Slack webhook notifications
-  monitoring/             DB-driven config (processes, extensions, paths)
-  tracking/               SHA-256 hash-based file tracking
-  ueba/                   User behavior analytics + risk scoring
-  web/                    Router + SSE + CSRF + rate limiting + templates
-  config/                 Environment-based configuration
-  database/               Connection pool + embedded migrations (12)
-
+  auth/             JWT, bcrypt, TOTP, 인증 미들웨어
+  vault/            파일 암호화, 저장소, 키 관리
+  audit/            감사 로깅 미들웨어, 해시 체인 검증
+  endpoint/         osquery·클립보드 이벤트 수신
+  alert/            룰 엔진, Slack 알림
+  ueba/             임계값 기반 이상 행위 점수화
+  web/              라우터, SSE, CSRF, 템플릿
+  database/         연결 풀, 임베디드 마이그레이션
 deploy/
-  osquery/                osquery.conf + osquery.flags
-  nginx/                  Reverse proxy with TLS
-  systemd/                Linux service unit
-  launchd/                macOS agent plist
-  backup/                 Daily pg_dump + rsync script
+  osquery/          osquery 설정
+  nginx/            리버스 프록시 설정
+  systemd/          Linux 서비스 유닛
+  backup/           pg_dump 백업 스크립트
 ```
 
-## Testing
+## 상태
 
-```bash
-make test-all     # Build + vet + 97 tests across 9 packages
-make ci           # Same as test-all (CI pipeline target)
-```
-
-Pre-commit hook runs automatically on every commit:
-```
-build → vet → test (all 9 packages) → commit allowed
-```
-
-## Web Pages
-
-| URL | Description |
-|---|---|
-| `/dashboard` | Real-time stats, alerts, SSE events, risk users |
-| `/files` | Encrypted file vault with folder navigation |
-| `/audit/search` | Audit log search + CSV export |
-| `/events/search` | Endpoint event search + CSV export |
-| `/admin/users` | User management (create, edit, reset password) |
-| `/admin/alerts` | Alert rules (11 pre-configured) |
-| `/admin/monitoring` | Monitored processes, extensions, paths (DB-driven) |
-| `/admin/tracking` | Hash-based file tracking (register, detect, history) |
-| `/admin/agents` | Endpoint agent status |
-| `/account/2fa` | Two-factor authentication setup |
-
-## Design Decisions
-
-1. **Detection over Prevention** — No kernel drivers, no DLL injection, no OS hooks. Zero performance impact on employee PCs.
-2. **Go over Java/Spring** — Single 21MB binary, ~50MB RAM. No JVM, no container required.
-3. **PostgreSQL only** — 40 users, ~50K events/day. No Elasticsearch, no Redis, no Kafka needed.
-4. **htmx over React** — Server-rendered HTML, no build step, no node_modules.
-5. **On-premise** — Document security product. Files stay on company network.
+2026년 봄 작성. 개인 포트폴리오 프로젝트. AI 어시스턴스를 사용해 빌드했으며, 핵심 모듈(해시 체인 트리거, 클립보드 에이전트, envelope encryption)은 직접 이해하고 작성했다.
 
 ## License
 
