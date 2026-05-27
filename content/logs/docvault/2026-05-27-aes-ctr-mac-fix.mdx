@@ -1,0 +1,22 @@
+---
+title: Replaced AES-CTR with chunked AES-GCM after finding the file body had no MAC
+date: 2026-05-27
+project: docvault
+kind: troubleshoot
+visibility: public
+language: en
+summary: A documentation audit revealed README claimed AES-256-GCM but the actual cipher on file bodies was CTR with no authentication tag. Rewrote encryption.go as chunked GCM with truncation and reorder defenses, and fixed a concurrent-INSERT race in the hash chain triggers in the same commit.
+tags: [security, aead, gcm, postgresql, advisory-lock]
+---
+
+Two integrity bugs found during a documentation cleanup pass, both fixed in commit `22d8bd7`.
+
+**Bug 1 — File body unauthenticated.** `internal/vault/encryption.go` used `cipher.NewCTR` + `cipher.StreamWriter`. The README and ADR-008 both stated AES-256-GCM, but GCM was only applied to the file *keys* in `keymanager.go` (envelope encryption); the file body had no MAC. A bit flip on disk decrypted silently to corrupted plaintext, and CTR's malleability lets an attacker who knows a byte position flip plaintext bits deterministically.
+
+**Bug 2 — Hash chain race.** The triggers from `1d16c2c` read `SELECT row_hash FROM <table> ORDER BY id DESC LIMIT 1` with no serialization. Under concurrent INSERTs, two transactions could read the same `prev_hash` and produce a forked chain. `VerifyHashChain` walked one branch and missed the divergence.
+
+**Fix.** Rewrote `encryption.go` as chunked AES-256-GCM with 64 KiB plaintext per chunk. Per-chunk nonce = `base_nonce[:8] || chunk_index (3 bytes BE) || final_flag (1 byte)`. The final flag defeats truncation; the chunk index defeats reorder. Added five tests: `TestTamperDetection` (4 mutation sites: chunk body, GCM tag, middle chunk, final chunk), `TestTruncationDetection`, `TestChunkReorderDetection`, `TestWrongNonceFails`, `TestShortNonceRejected`. For the chain race, migration `013_audit_advisory_lock` adds `PERFORM pg_advisory_xact_lock(hashtext('audit_logs_chain'))` (and `endpoint_events_chain`) at the top of each trigger function via `CREATE OR REPLACE FUNCTION` — transaction-scoped, released automatically at COMMIT/ROLLBACK.
+
+Result: tests cover the new tamper-detection invariants. `EncryptStream` signature unchanged, so `storage.go` callers needed no edits. `LIMITATIONS.md` L-SEC-1 and L-SEC-3 are marked resolved; the original troubleshooting entries are in `docs/troubleshooting.md` referencing the same commit hash.
+
+Limit: GCM is slightly slower than CTR (AES-NI mostly closes the gap on modern CPUs). The advisory lock serializes hash-chain inserts per table — at the documented ~50K events/day target this is far from any bottleneck, but a sustained workload above ~10 inserts/sec would justify a different integrity strategy. The DB-superuser hash-chain bypass (LIMITATIONS L-SEC-2) is still open by design; closing it would need external timestamping (RFC 3161) or WORM storage.

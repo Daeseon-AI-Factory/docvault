@@ -1,0 +1,20 @@
+---
+title: AI-scaffolded the full DocVault skeleton in a single 92-file commit
+date: 2026-03-24
+project: docvault
+kind: tech-retro
+visibility: public
+language: en
+summary: Ran the 8-phase implementation plan from CLAUDE.md to a working end-to-end skeleton in one commit, with AI assistance. Surface coverage was wide but depth was thin — the interesting parts came later.
+tags: [go, ai-assisted, project-start, scaffolding]
+---
+
+Used Claude as the implementing partner against a written 8-phase plan in `CLAUDE.md`, shipping the whole skeleton in commit `4e3168f`.
+
+Before: empty repo (only `71031be` "Initial commit" and the planning document).
+
+The commit added 92 files / +10,113 lines covering config, PostgreSQL pool, JWT auth (15min/24h tokens), AES-256-CTR streaming envelope encryption, vault upload/download/checkout, folder CRUD with permission hierarchy, audit middleware, osquery + clipboard ingestion, alert engine, htmx + Go template frontend, and 7 SQL migrations. Deploy stubs (nginx, systemd, daily backup) included.
+
+Result: a working end-to-end system on day one — could log in, upload an encrypted file, view the audit log, register an endpoint agent.
+
+Limit: surface was wide, depth was thin. Several modules followed standard patterns without a second pass — the file body cipher was AES-CTR with no MAC (fixed two months later in `22d8bd7`), agent auth was a single shared PSK, and a few "tested at X scale" claims in README were aspirational rather than measured. The next ~17 commits did the actual deepening work.

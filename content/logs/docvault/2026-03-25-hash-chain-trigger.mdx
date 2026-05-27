@@ -1,0 +1,20 @@
+---
+title: Moved audit-log tamper detection from app code to PostgreSQL triggers
+date: 2026-03-25
+project: docvault
+kind: tech-retro
+visibility: public
+language: en
+summary: Added a SHA-256 hash chain on audit_logs and endpoint_events via DB triggers, plus UPDATE/DELETE prevention. Chose DB-level enforcement so any insert path — including ad-hoc psql — is forced through the chain.
+tags: [postgresql, audit-log, integrity, triggers, pgcrypto]
+---
+
+Added migration `008_log_integrity` in commit `1d16c2c`: each row now carries `prev_hash` (the previous row's `row_hash`) and `row_hash` (`SHA-256(prev_hash || data columns)`), computed inside an INSERT trigger using pgcrypto's `digest()`. Separate BEFORE UPDATE and BEFORE DELETE triggers raise EXCEPTION on both tables.
+
+Before: audit logs were trusted because the application chose to write them. Anyone with database credentials — `psql`, future ORM, ad-hoc maintenance script — could rewrite history with no trace.
+
+After: any INSERT path is forced through the chain. The application can't skip integrity even if a future handler forgets. A `VerifyHashChain(table)` procedure walks the chain and returns `is_intact`, `total_rows`, `verified` count, and `broken_at` (the first divergent row ID) if violated. Exposed at `GET /api/audit/verify?table=audit_logs`.
+
+Result: log integrity is enforced by the database rather than by application discipline. CSV export with BOM (for Korean Excel) includes the `row_hash` column so external verification is possible without server access.
+
+Limit: a PostgreSQL superuser can still `ALTER TABLE ... DISABLE TRIGGER ALL`, rewrite rows, recompute hashes manually, re-enable, and leave no trace — so this isn't admissible-evidence integrity, just application-bypass-resistant integrity. Real legal-evidence integrity needs external timestamping (RFC 3161) or WORM storage. Separately, this trigger also had a concurrent-INSERT race condition that was fixed two months later in `22d8bd7`.
