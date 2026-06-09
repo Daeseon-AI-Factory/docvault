@@ -1,0 +1,103 @@
+# DocVault production stack — ONE file covers both deployment scenarios:
+#
+#   (A) Dedicated server with a public domain (your cloud/Linux VM):
+#         DOCVAULT_DOMAIN=docvault.example.com  -> Caddy gets a real Let's Encrypt cert.
+#       Friend's PC runs only the agent, pointing at https://docvault.example.com
+#
+#   (B) Friend's PC all-in-one (Docker Desktop on Windows), LAN/local:
+#         DOCVAULT_DOMAIN=localhost             -> Caddy issues a local self-signed cert.
+#       The agent runs on the same PC, pointing at https://localhost
+#
+# Configure everything through a .env file in this directory.
+# Generate one with strong secrets:   bash scripts/gen-env.sh
+#
+# Bring up:   docker compose -f docker-compose.prod.yml up -d --build
+# The `migrate` service applies DB migrations automatically before the server starts.
+# The `seed` service creates the admin account (password from DOCVAULT_ADMIN_PASSWORD).
+
+name: docvault
+
+x-app-env: &app-env
+  DOCVAULT_DB_URL: postgres://docvault_app:${DOCVAULT_DB_PASSWORD:?set DOCVAULT_DB_PASSWORD in .env}@db:5432/docvault?sslmode=disable
+  DOCVAULT_MASTER_KEY: ${DOCVAULT_MASTER_KEY:?set DOCVAULT_MASTER_KEY in .env}
+  DOCVAULT_JWT_SECRET: ${DOCVAULT_JWT_SECRET:?set DOCVAULT_JWT_SECRET in .env}
+  DOCVAULT_OSQUERY_PSK: ${DOCVAULT_OSQUERY_PSK:?set DOCVAULT_OSQUERY_PSK in .env}
+  DOCVAULT_VAULT_PATH: /vault
+  DOCVAULT_LISTEN_ADDR: ":8080"
+  DOCVAULT_SLACK_WEBHOOK: ${DOCVAULT_SLACK_WEBHOOK:-}
+  DOCVAULT_ALERT_EMAIL: ${DOCVAULT_ALERT_EMAIL:-}
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: docvault
+      POSTGRES_USER: docvault_app
+      POSTGRES_PASSWORD: ${DOCVAULT_DB_PASSWORD:?set DOCVAULT_DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docvault_app -d docvault"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # NOTE: no host port is published — the DB is only reachable inside the
+    # compose network. If you point at an EXTERNAL postgres instead, change the
+    # DB URL above to use sslmode=require (see .env.prod.example).
+
+  # One-shot: applies embedded migrations, then exits. The server waits for it.
+  migrate:
+    build: .
+    command: ["migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *app-env
+    restart: "no"
+
+  # One-shot: creates the admin account (idempotent — skips if it already exists).
+  seed:
+    build: .
+    command: ["seed"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *app-env
+      DOCVAULT_ADMIN_PASSWORD: ${DOCVAULT_ADMIN_PASSWORD:-}
+    restart: "no"
+
+  server:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *app-env
+    volumes:
+      - vaultdata:/vault
+    # No host port: Caddy terminates TLS and reverse-proxies to here.
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      DOCVAULT_DOMAIN: ${DOCVAULT_DOMAIN:?set DOCVAULT_DOMAIN in .env (a domain, or 'localhost' for all-in-one)}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  vaultdata:
+  caddy_data:
+  caddy_config:

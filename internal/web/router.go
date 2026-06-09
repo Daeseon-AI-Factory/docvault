@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -48,6 +49,9 @@ func NewRouter(deps RouterDeps) http.Handler {
 
 	authHandler := auth.NewHandler(deps.DB, deps.JWTSvc, deps.Logger, auditAuthAction(deps.AuditRepo, deps.Logger))
 
+	// Brute-force protection for the JSON login endpoint (parity with the web login flow).
+	loginRateLimiter := NewLoginRateLimiter(5, 10*time.Minute, 15*time.Minute)
+
 	// Static files
 	r.Handle("/static/*", http.StripPrefix("/static/", staticHandler()))
 
@@ -68,7 +72,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	})
 
 	// Public API routes
-	r.Post("/api/auth/login", authHandler.Login)
+	r.With(LoginRateLimitMiddleware(loginRateLimiter)).Post("/api/auth/login", authHandler.Login)
 	r.Post("/api/auth/refresh", authHandler.Refresh)
 
 	// Agent event receivers (PSK-authenticated, not JWT)

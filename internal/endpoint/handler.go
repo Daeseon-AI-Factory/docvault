@@ -2,6 +2,7 @@ package endpoint
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -108,7 +109,7 @@ func (h *Handler) requirePSK(w http.ResponseWriter, r *http.Request, headerNames
 	}
 
 	for _, name := range headerNames {
-		if r.Header.Get(name) == h.psk {
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get(name)), []byte(h.psk)) == 1 {
 			return true
 		}
 	}

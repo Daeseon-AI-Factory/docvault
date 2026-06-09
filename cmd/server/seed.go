@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -20,7 +23,20 @@ func seedAdmin(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) err
 	if count > 0 {
 		logger.Info("admin user already exists, skipping seed")
 	} else {
-		hash, err := user.HashPassword("admin1234!")
+		// Use an operator-supplied password, or generate a strong random one.
+		// Never hardcode a default and never log the password.
+		adminPassword := os.Getenv("DOCVAULT_ADMIN_PASSWORD")
+		generated := false
+		if adminPassword == "" {
+			pw, err := randomPassword()
+			if err != nil {
+				return fmt.Errorf("generate admin password: %w", err)
+			}
+			adminPassword = pw
+			generated = true
+		}
+
+		hash, err := user.HashPassword(adminPassword)
 		if err != nil {
 			return fmt.Errorf("hash admin password: %w", err)
 		}
@@ -34,7 +50,12 @@ func seedAdmin(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) err
 			return fmt.Errorf("insert admin user: %w", err)
 		}
 
-		logger.Info("seeded admin user (username: admin, password: admin1234!)")
+		if generated {
+			// Printed once to stdout (not the structured log) so the operator
+			// can capture it from the seed container output.
+			fmt.Printf("\n=== DocVault admin account created ===\n  username: admin\n  password: %s\n  (shown once — save it now and change it after first login)\n\n", adminPassword)
+		}
+		logger.Info("seeded admin user", "username", "admin")
 	}
 
 	// Seed default alert rules
@@ -164,4 +185,13 @@ func seedAlertRules(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger
 	}
 
 	return nil
+}
+
+// randomPassword returns a URL-safe ~24-character random password.
+func randomPassword() (string, error) {
+	b := make([]byte, 18)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }

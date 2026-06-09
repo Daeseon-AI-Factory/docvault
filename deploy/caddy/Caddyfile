@@ -1,0 +1,37 @@
+# DocVault reverse proxy with automatic HTTPS.
+#
+# DOCVAULT_DOMAIN comes from .env:
+#   - a public domain (docvault.example.com) -> Caddy fetches a real Let's Encrypt
+#     certificate automatically (requires ports 80/443 reachable from the internet
+#     and DNS pointing at this server).
+#   - "localhost" (friend's PC all-in-one) -> Caddy issues a local self-signed cert.
+#
+# Caddy streams large uploads; max_size guards the 500MB vault upload limit.
+
+{$DOCVAULT_DOMAIN} {
+	encode gzip
+
+	request_body {
+		max_size 550MB
+	}
+
+	reverse_proxy server:8080 {
+		# Preserve client info for audit logs and the login rate limiter.
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+
+		# Long timeouts for big uploads and the SSE event stream.
+		transport http {
+			read_timeout 300s
+			write_timeout 300s
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}

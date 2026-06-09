@@ -306,18 +306,26 @@ func run(logger *slog.Logger) error {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	// UEBA baseline recalculation scheduler (daily at 2:00 AM)
+	// UEBA baseline recalculation scheduler (daily at 2:00 AM).
+	// Tied to a cancellable context so it stops cleanly on shutdown instead of
+	// leaking a goroutine that blocks clean process termination.
+	schedCtx, schedCancel := context.WithCancel(context.Background())
+	defer schedCancel()
 	go func() {
-		// Initial calculation on startup
-		bgCtx := context.Background()
-		if err := uebaAnalyzer.RecalculateBaselines(bgCtx); err != nil {
+		if err := uebaAnalyzer.RecalculateBaselines(schedCtx); err != nil {
 			logger.Error("initial baseline calculation", "error", err)
 		}
 		for {
 			now := time.Now()
 			next := time.Date(now.Year(), now.Month(), now.Day()+1, 2, 0, 0, 0, now.Location())
-			time.Sleep(time.Until(next))
-			if err := uebaAnalyzer.RecalculateBaselines(bgCtx); err != nil {
+			timer := time.NewTimer(time.Until(next))
+			select {
+			case <-schedCtx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			if err := uebaAnalyzer.RecalculateBaselines(schedCtx); err != nil {
 				logger.Error("scheduled baseline calculation", "error", err)
 			}
 		}

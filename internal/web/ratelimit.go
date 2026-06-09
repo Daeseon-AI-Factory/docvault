@@ -136,3 +136,42 @@ func ExtractIP(r *http.Request) string {
 	}
 	return r.RemoteAddr
 }
+
+// LoginRateLimitMiddleware throttles login endpoints per client IP. Repeated
+// 401/403 responses lock the IP for the configured duration; a successful
+// (2xx) response clears the counter. This protects the JSON /api/auth/login
+// endpoint, which otherwise had no brute-force protection.
+func LoginRateLimitMiddleware(rl *LoginRateLimiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip := ExtractIP(r)
+			if rl.IsLocked(ip) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusTooManyRequests)
+				w.Write([]byte(`{"error":"too many attempts, please try again later"}`))
+				return
+			}
+
+			rec := &statusCapture{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(rec, r)
+
+			switch {
+			case rec.status == http.StatusUnauthorized || rec.status == http.StatusForbidden:
+				rl.RecordFailure(ip)
+			case rec.status >= 200 && rec.status < 300:
+				rl.RecordSuccess(ip)
+			}
+		})
+	}
+}
+
+// statusCapture records the response status code for rate-limit decisions.
+type statusCapture struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusCapture) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}

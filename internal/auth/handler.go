@@ -31,6 +31,7 @@ func NewHandler(db *pgxpool.Pool, jwt *JWTService, logger *slog.Logger, auditLog
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	TOTPCode string `json:"totp_code"`
 }
 
 type loginResponse struct {
@@ -75,6 +76,23 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		h.logAudit(r, u.ID, "login", http.StatusUnauthorized)
 		http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
 		return
+	}
+
+	// Enforce the TOTP second factor when enabled, matching the web login flow.
+	// Without this, the JSON API would let a password alone bypass 2FA entirely.
+	if u.TOTPEnabled {
+		if req.TOTPCode == "" {
+			h.logAudit(r, u.ID, "login", http.StatusUnauthorized)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{"error": "two-factor code required", "requires_2fa": true})
+			return
+		}
+		if !ValidateTOTP(u.TOTPSecret, req.TOTPCode) {
+			h.logAudit(r, u.ID, "login", http.StatusUnauthorized)
+			http.Error(w, `{"error":"invalid two-factor code"}`, http.StatusUnauthorized)
+			return
+		}
 	}
 
 	tokens, err := h.jwt.GenerateTokenPair(u)
@@ -151,9 +169,11 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) findUserByUsername(ctx context.Context, username string) (*user.User, error) {
 	var u user.User
 	err := h.db.QueryRow(ctx,
-		`SELECT id, username, email, password_hash, full_name, role, department, is_active, created_at, updated_at
+		`SELECT id, username, email, password_hash, full_name, role, department, is_active,
+		        COALESCE(totp_secret,''), COALESCE(totp_enabled,false), created_at, updated_at
 		 FROM users WHERE username = $1`, username,
-	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.FullName, &u.Role, &u.Department, &u.IsActive, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.FullName, &u.Role, &u.Department, &u.IsActive,
+		&u.TOTPSecret, &u.TOTPEnabled, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("find user by username %s: %w", username, err)
 	}

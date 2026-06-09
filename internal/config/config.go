@@ -43,9 +43,39 @@ func Load() (*Config, error) {
 	if cfg.OsqueryPSK == "" {
 		return nil, fmt.Errorf("DOCVAULT_OSQUERY_PSK is required")
 	}
+	if err := validateSecrets(cfg); err != nil {
+		return nil, err
+	}
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = ":8080"
 	}
 
 	return cfg, nil
+}
+
+// exampleSecrets are the placeholder values shipped in .env.example and
+// docker-compose.yml. Refusing them at startup prevents accidentally deploying
+// with a publicly known master key or signing secret — critical when the server
+// is exposed to the internet.
+var exampleSecrets = map[string]bool{
+	"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef": true, // .env.example master key
+	"change-this-to-a-random-string":                                   true, // .env.example JWT secret
+	"docvault-jwt-dev-secret-2024":                                     true, // docker-compose JWT secret
+	"change-this-pre-shared-key":                                       true, // .env.example PSK
+	"dev-psk-for-testing":                                              true, // docker-compose PSK
+}
+
+// validateSecrets rejects known placeholder values and enforces minimum lengths
+// for the signing secret and agent PSK.
+func validateSecrets(cfg *Config) error {
+	if exampleSecrets[cfg.MasterKey] {
+		return fmt.Errorf("DOCVAULT_MASTER_KEY is set to a known example value; generate a real key with: openssl rand -hex 32")
+	}
+	if exampleSecrets[cfg.JWTSecret] || len(cfg.JWTSecret) < 16 {
+		return fmt.Errorf("DOCVAULT_JWT_SECRET must be a unique value of at least 16 characters")
+	}
+	if exampleSecrets[cfg.OsqueryPSK] || len(cfg.OsqueryPSK) < 12 {
+		return fmt.Errorf("DOCVAULT_OSQUERY_PSK must be a unique value of at least 12 characters")
+	}
+	return nil
 }
