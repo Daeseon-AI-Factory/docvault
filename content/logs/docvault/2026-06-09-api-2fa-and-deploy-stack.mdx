@@ -1,0 +1,50 @@
+---
+title: "Closed an API 2FA bypass and shipped a one-command production deploy"
+date: "2026-06-09"
+project: "docvault"
+kind: "troubleshoot"
+visibility: "public"
+language: "en"
+summary: "After verifying a separate batch of access-control fixes, I closed the remaining auth gaps — an API-login 2FA bypass with no brute-force limit, example/weak secrets accepted at startup, and a hardcoded admin password — then added a Docker Compose + Caddy stack that auto-migrates and auto-issues TLS for both a dedicated server and an all-in-one install."
+tags: ["security", "auth", "2fa", "deployment", "docker", "caddy", "go", "postgres"]
+---
+
+The goal this session was concrete: get DocVault to a state where it can actually be deployed for a real user — a friend's Windows PC reporting to a remote server over the internet — without falling over in daily use.
+
+## Where things stood
+
+A separate review pass had already produced a batch of access-control fixes: admin routes gated by role, folder permissions enforced on file operations, agent endpoints failing closed, CSV exports rebuilt with `encoding/csv`. I verified those against the diff and the test suite — `go build` and `go vet` clean, `go test ./...` green (including the previously-failing osquery Windows-path tests) — before building on top of them.
+
+Verification also surfaced one gap those commits did **not** close.
+
+## Bug: the JSON login bypassed 2FA
+
+`POST /api/auth/login` (`internal/auth/handler.go`) validated the password and immediately issued full access + refresh tokens. It never checked `totp_enabled`. The web login flow (`internal/web/pages.go`) *did* enforce TOTP, so 2FA looked enabled — but anyone with a password could skip the second factor entirely through the API endpoint. The same handler also had no rate limiting; the login throttle lived only in the web path.
+
+**Fix** (`5e6b325`): `Login` now selects `totp_secret`/`totp_enabled`, and when 2FA is on it requires a `totp_code` checked through `ValidateTOTP` — returning `401 {"requires_2fa": true}` when the code is absent. A new `LoginRateLimitMiddleware` (`internal/web/ratelimit.go`) wraps `/api/auth/login`: it records 401/403 as failures and clears the counter on a 2xx, locking an IP after repeated misses.
+
+## Hardening the rest of the startup path
+
+Three smaller but deployment-relevant fixes landed in the same commit:
+
+- **Reject example secrets.** `config.Load` now refuses the literal placeholder master key / JWT secret / PSK shipped in `.env.example` and `docker-compose.yml`, and enforces a minimum length. A deploy that forgets to generate real secrets fails fast instead of running with a publicly known AES key.
+- **No hardcoded admin.** `seed` used to create `admin / admin1234!` and log the password. It now takes `DOCVAULT_ADMIN_PASSWORD`, or generates a strong random one printed once to stdout — and never logs it.
+- **Clean shutdown + constant-time PSK.** The UEBA baseline goroutine is now tied to a cancellable context so it stops on shutdown instead of leaking, and the agent PSK is compared with `crypto/subtle.ConstantTimeCompare`.
+
+## The actual deploy story
+
+The real blocker for "install it for a friend" was that there was no working one-command deploy. The old `docker-compose.yml` ran only `serve` against an empty database (no migration step), shipped the example secrets, and the `Dockerfile` pinned Go 1.22 while `go.mod` wants 1.26.1.
+
+The new stack:
+
+- **`docker-compose.prod.yml`** orchestrates `db → migrate → seed → server → caddy`. Migrations are embedded in the binary (`//go:embed migrations/*.sql`), so the one-shot `migrate` service applies them automatically before the server starts.
+- **`deploy/caddy/Caddyfile`** gives automatic HTTPS: a public domain gets a real Let's Encrypt certificate; `localhost` gets a local self-signed one.
+- **`scripts/gen-env.sh`** generates strong secrets into a `chmod 600 .env` and prints the admin password, agent PSK, and server URL once.
+
+Crucially the *same* compose file plus `.env` covers two scenarios: a dedicated remote server with a public domain, and — later — an all-in-one install directly on the friend's PC (`DOCVAULT_DOMAIN=localhost`). Only the agent's `DOCVAULT_SERVER_URL` changes between them.
+
+## Honest status
+
+`go build`, `go vet`, and `go test ./...` all pass. What I could **not** do here: this environment has no Docker, so `docker compose build/up` was never run — the container build (and that `golang:1.26-alpine` exists) still has to be confirmed on the actual server during smoke testing. The 2FA-rejection and rate-limit behaviours are verified at the code/compile level; the end-to-end check — a real 2FA account refused without a code — happens once the stack is up against a live database.
+
+Still open before this is "safe on the public internet": encrypting TOTP secrets and recovery codes at rest, encrypting backups, and the agent-side reliability work (retry, offline queue, periodic re-enroll) so a dropped connection never silently loses events.

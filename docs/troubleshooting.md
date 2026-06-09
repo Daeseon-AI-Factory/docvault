@@ -67,3 +67,29 @@ Full repository review found admin web routes protected only by login middleware
 - **Fix**: Commit `6df4c71` attaches `audit.Middleware` to the protected web group, adds action mappings for web form POSTs, preserves `http.Flusher`, and adds route/action tests. Commit `9f81995` adds explicit audit logging for API login, web login, 2FA login completion/failure, and logout after validating the session token.
 - **Commit**: 6df4c71, 9f81995
 - **Pattern**: Audit middleware covers authenticated request groups well, but authentication boundary events need explicit logging because the user context is created during the handler.
+
+## JSON login endpoint bypassed 2FA and had no rate limit
+
+- **Symptom**:
+
+```text
+POST /api/auth/login validated the password and immediately returned full access + refresh tokens — it never checked totp_enabled, while the web /login flow did enforce TOTP. The same API endpoint also had no brute-force throttle (the login rate limiter existed only in the web LoginSubmit path).
+```
+
+- **Cause**: Verified in `internal/auth/handler.go`: `Login` ran `user.CheckPassword` then `GenerateTokenPair` with no TOTP branch; `findUserByUsername` did not even select `totp_secret`/`totp_enabled`. The `LoginRateLimiter` was instantiated only in `internal/web/pages.go` for the cookie login.
+- **Fix**: Commit `5e6b325`. `Login` now selects `totp_secret`/`totp_enabled` and, when 2FA is enabled, requires a `totp_code` validated via `ValidateTOTP` (returns `401 {"requires_2fa":true}` when absent). Added `LoginRateLimitMiddleware` to `internal/web/ratelimit.go` (records 401/403 as failures, clears on 2xx) and wired it onto `/api/auth/login` in `internal/web/router.go`. `go build` / `vet` / `test ./...` all pass.
+- **Commit**: 5e6b325
+- **Pattern**: Parallel API and web auth paths must share the same factors and throttling. Verify the alternate endpoint, not just the UI flow.
+
+## No one-command deploy; example secrets accepted; server started against empty schema
+
+- **Symptom**:
+
+```text
+docker-compose.yml ran only `serve` against an empty database (no migration step), shipped the literal example master key / JWT secret, and the Dockerfile pinned Go 1.22 while go.mod declares go 1.26.1. seed created admin/admin1234! and logged the password.
+```
+
+- **Cause**: Verified — the old compose had no migrate service; `.env.example` and `docker-compose.yml` carried the example master key `0123…cdef`; `cmd/server/seed.go` hashed the constant `admin1234!` and logged it.
+- **Fix**: Commit `5e6b325`. `docker-compose.prod.yml` orchestrates `db → migrate → seed → server → caddy` (migrations auto-apply from the embedded FS). `config.Load` rejects known example/weak secrets and enforces JWT/PSK minimum length. `scripts/gen-env.sh` generates strong secrets into a `chmod 600 .env`; `.env.prod.example` documents the dedicated-server and friend's-PC all-in-one scenarios. `deploy/caddy/Caddyfile` provides automatic HTTPS. `seed.go` uses `DOCVAULT_ADMIN_PASSWORD` or a random password and never logs it. `Dockerfile` → `golang:1.26-alpine`. NOTE: `docker compose build/up` was not run in this environment — Go build/vet/test verified only; container build to be confirmed on the server.
+- **Commit**: 5e6b325
+- **Pattern**: Bundle migrations into the deploy orchestration and refuse example secrets at startup, so a known-key deploy fails fast instead of silently running insecure.
