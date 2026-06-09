@@ -1,0 +1,26 @@
+---
+title: Hardened DocVault access controls, agent auth, and CSV exports
+date: 2026-06-09
+project: docvault
+kind: troubleshoot
+visibility: public
+language: en
+summary: A full repository review found missing admin and folder authorization checks, fail-open agent PSK behavior, and fragile CSV export generation. Commit e0d498d closes those gaps and adds regression tests.
+tags: [security, authorization, jwt, csv, osquery]
+---
+
+Commit `e0d498d` hardens several production-facing paths found during a full repository review.
+
+**Observed issues.** `internal/web/router.go` registered `/admin/...` web routes inside login middleware but without `auth.RequireRole(user.RoleAdmin)`. `internal/vault/handler.go` had no `folder.Repository`, so file upload/list/download/delete/checkout/checkin handlers could not enforce folder `read`, `write`, or `admin` permissions. `internal/endpoint/handler.go` only checked the PSK inside `if h.psk != ""`, which meant an empty `DOCVAULT_OSQUERY_PSK` made agent endpoints fail open. CSV exports in `internal/audit/handler.go` and `internal/web/pages.go` were generated with manual string concatenation.
+
+**Fix.** Admin web routes now run through `auth.RequireRole(user.RoleAdmin)`. Vault API handlers receive the folder repository and enforce folder permissions before file operations. Folder access checks now include creator admin ownership and inherited parent permissions. Web forms and pages enforce the same folder/admin boundaries before rendering or mutating data. `DOCVAULT_OSQUERY_PSK` is required at config load, and agent endpoints return service unavailable if authentication is not configured. JWT validation now separates access, refresh, and pending-2FA token types. Auth, refresh, pending-2FA, and CSRF cookies are marked `Secure`. CSV exports now use `encoding/csv` and prefix spreadsheet formula-like values.
+
+**Tests and verification.** Added regression tests for CSV escaping, fail-closed agent PSK behavior, JWT token type validation, Secure cookies, and Windows/UNC path parsing. After the changes:
+
+```text
+go test ./...  # passed
+go vet ./...   # passed
+go build ./... # passed
+```
+
+**Limit.** Existing protected API routes still use the audit middleware. This change did not add a new per-action audit event for every HTML form POST; that should be handled separately if the product requirement is "every UI mutation has an explicit audit event."

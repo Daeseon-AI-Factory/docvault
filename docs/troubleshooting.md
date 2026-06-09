@@ -39,3 +39,18 @@ Concrete only. Numbers, file paths, commit hashes. No "lessons learned" essays.
 - **Fix**: Migration `013_audit_advisory_lock` adds `PERFORM pg_advisory_xact_lock(hashtext('audit_logs_chain'))` (and `endpoint_events_chain`) at the top of each trigger function via `CREATE OR REPLACE FUNCTION`. Transaction-scoped — released automatically at COMMIT/ROLLBACK. Trade-off documented in `docs/LIMITATIONS.md` L-SEC-3 (marked resolved): hash chain INSERTs become serialized per table; at the documented ~50K events/day target this is well under the bottleneck.
 - **Commit**: 22d8bd7
 - **Pattern**: A trigger that derives state from "the latest row" must explicitly serialize concurrent triggers. `pg_advisory_xact_lock(hashtext(key))` is the lightest tool — no schema change, no SERIALIZABLE isolation cost.
+<!-- skipped: 810b55b Fill commit hashes in troubleshooting entries [no-log] -->
+<!-- skipped: 524ae05 Backfill 3 log entries from git history [no-log] -->
+
+## Access-control and export hardening after full repository review
+
+- **Symptom**:
+
+```text
+Full repository review found admin web routes protected only by login middleware, file APIs missing folder permission checks, agent endpoints accepting unauthenticated traffic when DOCVAULT_OSQUERY_PSK was empty, and CSV exports built by ad hoc string concatenation.
+```
+
+- **Cause**: Verified in the inspected code before commit `e0d498d`: `internal/web/router.go` registered `/admin/...` routes inside `auth.AuthMiddleware` without `auth.RequireRole(user.RoleAdmin)`; `internal/vault/handler.go` did not receive a `folder.Repository` and could not enforce folder permissions; `internal/endpoint/handler.go` checked PSK only inside `if h.psk != ""`; `internal/audit/handler.go` and `internal/web/pages.go` wrote CSV rows manually instead of using `encoding/csv`.
+- **Fix**: Commit `e0d498d` adds admin-only route grouping, folder permission checks for vault/page/form paths, inherited folder access with creator admin ownership, required `DOCVAULT_OSQUERY_PSK`, fail-closed agent PSK checks, JWT token-type validation, Secure auth/CSRF cookies, `encoding/csv` exports with spreadsheet formula escaping, and regression tests in `internal/audit/csv_test.go`, `internal/endpoint/handler_test.go`, and `internal/web/csv_test.go`.
+- **Commit**: e0d498d
+- **Pattern**: Access control should sit at route and repository/service boundaries, not only in templates or navigation.
