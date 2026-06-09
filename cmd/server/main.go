@@ -17,10 +17,10 @@ import (
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/database"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/endpoint"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/folder"
-	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/tracking"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/ueba"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/vault"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/web"
 )
@@ -207,11 +207,11 @@ func run(logger *slog.Logger) error {
 	}
 
 	vaultRepo := vault.NewRepository(pool)
-	vaultHandler := vault.NewHandler(vaultRepo, storage, keyMgr, logger)
 
 	// Folder dependencies
 	folderRepo := folder.NewRepository(pool)
 	folderHandler := folder.NewHandler(folderRepo, logger)
+	vaultHandler := vault.NewHandler(vaultRepo, folderRepo, storage, keyMgr, logger)
 
 	// User dependencies
 	userRepo := user.NewRepository(pool)
@@ -253,19 +253,19 @@ func run(logger *slog.Logger) error {
 
 	// Page handler (HTML templates)
 	pageHandler, err := web.NewPageHandler(web.PageHandlerDeps{
-		DB:            pool,
-		JWTSvc:        jwtSvc,
-		VaultRepo:     vaultRepo,
-		FolderRepo:    folderRepo,
-		UserRepo:      userRepo,
-		AuditRepo:     auditRepo,
-		EndpointRepo:  endpointRepo,
+		DB:             pool,
+		JWTSvc:         jwtSvc,
+		VaultRepo:      vaultRepo,
+		FolderRepo:     folderRepo,
+		UserRepo:       userRepo,
+		AuditRepo:      auditRepo,
+		EndpointRepo:   endpointRepo,
 		AlertRepo:      alertRepo,
 		MonitorHandler: monHandler,
 		UEBAAnalyzer:   bridge,
 		FileTracker:    trackerBridge,
 		PSKConfigured:  cfg.OsqueryPSK != "",
-		Logger:        logger,
+		Logger:         logger,
 	})
 	if err != nil {
 		return fmt.Errorf("create page handler: %w", err)
@@ -290,9 +290,9 @@ func run(logger *slog.Logger) error {
 		AuditRepo:       auditRepo,
 		AuditHandler:    auditHandler,
 		EndpointHandler: endpointHandler,
-		AlertHandler:     alertHandler,
-		MonitorHandler:   monHandler,
-		PageHandler:      pageHandler,
+		AlertHandler:    alertHandler,
+		MonitorHandler:  monHandler,
+		PageHandler:     pageHandler,
 		FormHandler:     formHandler,
 		SSEHub:          sseHub,
 		Logger:          logger,

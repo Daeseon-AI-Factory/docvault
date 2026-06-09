@@ -32,9 +32,9 @@ func TestJWTGenerateAndValidate(t *testing.T) {
 	}
 
 	// Validate access token
-	claims, err := svc.ValidateToken(pair.AccessToken)
+	claims, err := svc.ValidateAccessToken(pair.AccessToken)
 	if err != nil {
-		t.Fatalf("ValidateToken: %v", err)
+		t.Fatalf("ValidateAccessToken: %v", err)
 	}
 
 	if claims.UserID != 42 {
@@ -45,6 +45,9 @@ func TestJWTGenerateAndValidate(t *testing.T) {
 	}
 	if claims.Role != user.RoleAdmin {
 		t.Errorf("Role = %s, want admin", claims.Role)
+	}
+	if claims.TokenType != tokenTypeAccess {
+		t.Errorf("TokenType = %s, want %s", claims.TokenType, tokenTypeAccess)
 	}
 }
 
@@ -70,13 +73,31 @@ func TestJWTWrongSecret(t *testing.T) {
 	}
 }
 
+func TestJWTRejectsWrongTokenType(t *testing.T) {
+	svc := NewJWTService("test-secret")
+	u := &user.User{ID: 1, Username: "test", Role: user.RoleEmployee}
+	pair, _ := svc.GenerateTokenPair(u)
+
+	if _, err := svc.ValidateAccessToken(pair.RefreshToken); err == nil {
+		t.Fatal("refresh token should not validate as access token")
+	}
+	if _, err := svc.ValidateRefreshToken(pair.AccessToken); err == nil {
+		t.Fatal("access token should not validate as refresh token")
+	}
+	if claims, err := svc.ValidateRefreshToken(pair.RefreshToken); err != nil {
+		t.Fatalf("refresh token should validate as refresh token: %v", err)
+	} else if claims.TokenType != tokenTypeRefresh {
+		t.Fatalf("TokenType = %s, want %s", claims.TokenType, tokenTypeRefresh)
+	}
+}
+
 func TestJWTExpiry(t *testing.T) {
 	svc := NewJWTService("test-secret")
 
 	u := &user.User{ID: 1, Username: "test", Role: user.RoleEmployee}
 	pair, _ := svc.GenerateTokenPair(u)
 
-	claims, _ := svc.ValidateToken(pair.AccessToken)
+	claims, _ := svc.ValidateAccessToken(pair.AccessToken)
 	if claims.ExpiresAt == nil {
 		t.Fatal("expected expiry to be set")
 	}
@@ -98,7 +119,7 @@ func TestJWTDifferentRoles(t *testing.T) {
 		t.Run(string(role), func(t *testing.T) {
 			u := &user.User{ID: 1, Username: "test", Role: role}
 			pair, _ := svc.GenerateTokenPair(u)
-			claims, err := svc.ValidateToken(pair.AccessToken)
+			claims, err := svc.ValidateAccessToken(pair.AccessToken)
 			if err != nil {
 				t.Fatalf("validate: %v", err)
 			}

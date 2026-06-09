@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -49,16 +51,16 @@ type TrackedFileView struct {
 }
 
 type DetectionView struct {
-	ID           int64     `json:"id"`
-	TrackedFileID int64    `json:"tracked_file_id"`
-	OriginalName string    `json:"original_name"`
-	Sensitivity  string    `json:"sensitivity"`
-	FoundName    string    `json:"found_name"`
-	FoundPath    string    `json:"found_path"`
-	Hostname     string    `json:"hostname"`
-	EventType    string    `json:"event_type"`
-	ProcessName  string    `json:"process_name"`
-	DetectedAt   time.Time `json:"detected_at"`
+	ID            int64     `json:"id"`
+	TrackedFileID int64     `json:"tracked_file_id"`
+	OriginalName  string    `json:"original_name"`
+	Sensitivity   string    `json:"sensitivity"`
+	FoundName     string    `json:"found_name"`
+	FoundPath     string    `json:"found_path"`
+	Hostname      string    `json:"hostname"`
+	EventType     string    `json:"event_type"`
+	ProcessName   string    `json:"process_name"`
+	DetectedAt    time.Time `json:"detected_at"`
 }
 
 // UserRiskSummary is a dashboard-facing risk summary.
@@ -71,14 +73,14 @@ type UserRiskSummary struct {
 }
 
 type PageHandler struct {
-	tc           *templateCache
-	db           *pgxpool.Pool
-	jwtSvc       *auth.JWTService
-	vaultRepo    *vault.Repository
-	folderRepo   *folder.Repository
-	userRepo     *user.Repository
-	auditRepo    *audit.Repository
-	endpointRepo *endpoint.Repository
+	tc             *templateCache
+	db             *pgxpool.Pool
+	jwtSvc         *auth.JWTService
+	vaultRepo      *vault.Repository
+	folderRepo     *folder.Repository
+	userRepo       *user.Repository
+	auditRepo      *audit.Repository
+	endpointRepo   *endpoint.Repository
 	alertRepo      *alert.Repository
 	monitorHandler *monitoring.Handler
 	uebaProvider   UEBARiskProvider
@@ -110,21 +112,21 @@ func NewPageHandler(deps PageHandlerDeps) (*PageHandler, error) {
 		return nil, err
 	}
 	return &PageHandler{
-		tc:           tc,
-		db:           deps.DB,
-		jwtSvc:       deps.JWTSvc,
-		vaultRepo:    deps.VaultRepo,
-		folderRepo:   deps.FolderRepo,
-		userRepo:     deps.UserRepo,
-		auditRepo:    deps.AuditRepo,
-		endpointRepo: deps.EndpointRepo,
+		tc:             tc,
+		db:             deps.DB,
+		jwtSvc:         deps.JWTSvc,
+		vaultRepo:      deps.VaultRepo,
+		folderRepo:     deps.FolderRepo,
+		userRepo:       deps.UserRepo,
+		auditRepo:      deps.AuditRepo,
+		endpointRepo:   deps.EndpointRepo,
 		alertRepo:      deps.AlertRepo,
 		monitorHandler: deps.MonitorHandler,
 		uebaProvider:   deps.UEBAAnalyzer,
 		fileTracker:    deps.FileTracker,
 		pskConfigured:  deps.PSKConfigured,
 		rateLimiter:    NewLoginRateLimiter(5, 10*time.Minute, 15*time.Minute),
-		logger:       deps.Logger,
+		logger:         deps.Logger,
 	}, nil
 }
 
@@ -158,6 +160,63 @@ func (h *PageHandler) pageData(r *http.Request, title, active string) map[string
 		"UserID":    bp.UserID,
 		"CSRFToken": CSRFToken(r),
 	}
+}
+
+func (h *PageHandler) requireAdmin(w http.ResponseWriter, r *http.Request) (*auth.AuthUser, bool) {
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return nil, false
+	}
+	if u.Role != user.RoleAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return nil, false
+	}
+	return u, true
+}
+
+func (h *PageHandler) hasFolderAccess(r *http.Request, u *auth.AuthUser, folderID int64, required folder.Permission) (bool, error) {
+	if u == nil {
+		return false, nil
+	}
+	if u.Role == user.RoleAdmin {
+		return true, nil
+	}
+	if h.folderRepo == nil {
+		return false, nil
+	}
+	return h.folderRepo.CheckAccess(r.Context(), folderID, u.ID, required)
+}
+
+func (h *PageHandler) requireFolderAccess(w http.ResponseWriter, r *http.Request, u *auth.AuthUser, folderID int64, required folder.Permission) bool {
+	allowed, err := h.hasFolderAccess(r, u, folderID, required)
+	if err != nil {
+		h.logger.Error("page: check folder access", "error", err, "folder_id", folderID, "user_id", u.ID)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return false
+	}
+	if !allowed {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+func (h *PageHandler) filterReadableFolders(r *http.Request, u *auth.AuthUser, folders []*folder.Folder) ([]*folder.Folder, error) {
+	if u == nil || u.Role == user.RoleAdmin {
+		return folders, nil
+	}
+	filtered := folders[:0]
+	for _, f := range folders {
+		allowed, err := h.hasFolderAccess(r, u, f.ID, folder.PermRead)
+		if err != nil {
+			return nil, err
+		}
+		if allowed {
+			filtered = append(filtered, f)
+		}
+	}
+	return filtered, nil
 }
 
 func (h *PageHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +262,7 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		pendingToken, _ := h.jwtSvc.GeneratePending2FAToken(u.ID)
 		http.SetCookie(w, &http.Cookie{
 			Name: "pending_2fa", Value: pendingToken, Path: "/",
-			HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 300, // 5 minutes
+			HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, MaxAge: 300, // 5 minutes
 		})
 		http.Redirect(w, r, "/login/2fa", http.StatusSeeOther)
 		return
@@ -223,11 +282,11 @@ func (h *PageHandler) issueSessionCookies(w http.ResponseWriter, u *user.User) {
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: "token", Value: tokens.AccessToken, Path: "/",
-		HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 900,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, MaxAge: 900,
 	})
 	http.SetCookie(w, &http.Cookie{
 		Name: "refresh_token", Value: tokens.RefreshToken, Path: "/",
-		HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400,
 	})
 }
 
@@ -251,7 +310,7 @@ func (h *PageHandler) Login2FASubmit(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.jwtSvc.ValidatePending2FAToken(cookie.Value)
 	if err != nil {
-		http.SetCookie(w, &http.Cookie{Name: "pending_2fa", Path: "/", MaxAge: -1})
+		http.SetCookie(w, &http.Cookie{Name: "pending_2fa", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
@@ -294,7 +353,7 @@ func (h *PageHandler) Login2FASubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2FA verified — clear pending cookie and issue session
-	http.SetCookie(w, &http.Cookie{Name: "pending_2fa", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: "pending_2fa", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	h.rateLimiter.RecordSuccess(ExtractIP(r))
 	h.issueSessionCookies(w, &u)
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
@@ -401,6 +460,10 @@ func (h *PageHandler) TwoFactorDisable(w http.ResponseWriter, r *http.Request) {
 // --- File Tracking ---
 
 func (h *PageHandler) AdminTrackingPage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+
 	data := h.pageData(r, "File Tracking", "admin-tracking")
 	if h.fileTracker != nil {
 		files, _ := h.fileTracker.List(r.Context())
@@ -412,9 +475,8 @@ func (h *PageHandler) AdminTrackingPage(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *PageHandler) AdminTrackingAdd(w http.ResponseWriter, r *http.Request) {
-	u := auth.UserFromContext(r.Context())
-	if u == nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+	u, ok := h.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 
@@ -441,6 +503,10 @@ func (h *PageHandler) AdminTrackingAdd(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PageHandler) AdminTrackingDelete(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if h.fileTracker != nil {
 		h.fileTracker.Unregister(r.Context(), id)
@@ -449,6 +515,10 @@ func (h *PageHandler) AdminTrackingDelete(w http.ResponseWriter, r *http.Request
 }
 
 func (h *PageHandler) AdminTrackingDetections(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	data := h.pageData(r, "Detection History", "admin-tracking")
 	if h.fileTracker != nil {
@@ -461,8 +531,8 @@ func (h *PageHandler) AdminTrackingDetections(w http.ResponseWriter, r *http.Req
 }
 
 func (h *PageHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: "token", Path: "/", MaxAge: -1})
-	http.SetCookie(w, &http.Cookie{Name: "refresh_token", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: "token", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: "refresh_token", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
@@ -510,24 +580,52 @@ func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PageHandler) FileBrowser(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
 	var folderID *int64
 	var currentFolderID int64
 	if idStr := r.URL.Query().Get("folder_id"); idStr != "" {
-		if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
-			folderID = &id
-			currentFolderID = id
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid folder ID", http.StatusBadRequest)
+			return
+		}
+		folderID = &id
+		currentFolderID = id
+		if !h.requireFolderAccess(w, r, u, id, folder.PermRead) {
+			return
 		}
 	}
 
-	folders, _ := h.folderRepo.ListChildren(r.Context(), folderID)
+	folders, err := h.folderRepo.ListChildren(r.Context(), folderID)
+	if err != nil {
+		h.logger.Error("file browser: list folders", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	folders, err = h.filterReadableFolders(r, u, folders)
+	if err != nil {
+		h.logger.Error("file browser: filter folders", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 
 	var files []*vault.File
 	if folderID != nil {
-		files, _ = h.vaultRepo.ListFilesByFolder(r.Context(), *folderID)
+		files, err = h.vaultRepo.ListFilesByFolder(r.Context(), *folderID)
+		if err != nil {
+			h.logger.Error("file browser: list files", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Build breadcrumb chain
-	breadcrumbs := h.buildBreadcrumbs(r, folderID)
+	breadcrumbs := h.buildBreadcrumbs(r, folderID, u)
 
 	data := h.pageData(r, "Files", "files")
 	data["Folders"] = folders
@@ -550,6 +648,14 @@ func (h *PageHandler) FileDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "file not found", http.StatusNotFound)
 		return
 	}
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if !h.requireFolderAccess(w, r, u, file.FolderID, folder.PermRead) {
+		return
+	}
 
 	versions, _ := h.vaultRepo.ListVersions(r.Context(), fileID)
 	targetType := "file"
@@ -557,7 +663,6 @@ func (h *PageHandler) FileDetail(w http.ResponseWriter, r *http.Request) {
 		TargetType: &targetType, TargetID: &fileID, Limit: 20,
 	})
 
-	u := auth.UserFromContext(r.Context())
 	checkedOutByMe := file.IsCheckedOut && file.CheckedOutBy != nil && u != nil && *file.CheckedOutBy == u.ID
 
 	data := h.pageData(r, file.Name, "files")
@@ -595,19 +700,28 @@ func (h *PageHandler) AuditUserPage(w http.ResponseWriter, r *http.Request) {
 func (h *PageHandler) AuditFilePage(w http.ResponseWriter, r *http.Request) {
 	fileIDStr := chi.URLParam(r, "fileID")
 	fileID, _ := strconv.ParseInt(fileIDStr, 10, 64)
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	f, err := h.vaultRepo.GetFileByID(r.Context(), fileID)
+	if err != nil {
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+	if !h.requireFolderAccess(w, r, u, f.FolderID, folder.PermRead) {
+		return
+	}
 
 	targetType := "file"
 	logs, _ := h.auditRepo.Search(r.Context(), audit.SearchParams{
 		TargetType: &targetType, TargetID: &fileID, Limit: 100,
 	})
 
-	fileName := "File #" + fileIDStr
-	if f, err := h.vaultRepo.GetFileByID(r.Context(), fileID); err == nil {
-		fileName = f.Name
-	}
-
 	data := h.pageData(r, "File Audit", "audit-search")
-	data["FileName"] = fileName
+	data["FileName"] = f.Name
 	data["Logs"] = logs
 	renderPage(w, h.tc, "audit_file.html", data)
 }
@@ -648,6 +762,10 @@ func (h *PageHandler) AuditSearchPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PageHandler) AdminUsersPage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+
 	users, _ := h.userRepo.List(r.Context())
 	data := h.pageData(r, "User Management", "admin-users")
 	data["Users"] = users
@@ -655,6 +773,10 @@ func (h *PageHandler) AdminUsersPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PageHandler) AdminUserEditPage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+
 	idStr := chi.URLParam(r, "userID")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -674,6 +796,10 @@ func (h *PageHandler) AdminUserEditPage(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *PageHandler) AdminAlertsPage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+
 	rules, _ := h.alertRepo.ListRules(r.Context(), false)
 	alerts, _ := h.alertRepo.ListAlerts(r.Context(), false, 50, 0)
 
@@ -684,6 +810,10 @@ func (h *PageHandler) AdminAlertsPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+
 	type agentInfo struct {
 		Hostname   string
 		Source     string
@@ -804,37 +934,57 @@ func (h *PageHandler) ExportEventsCSV(w http.ResponseWriter, r *http.Request) {
 
 	// BOM for Excel Korean compatibility
 	w.Write([]byte{0xEF, 0xBB, 0xBF})
-	w.Write([]byte("일시,사용자ID,이벤트유형,파일명,파일경로,프로세스,호스트명,소스\n"))
+	cw := csv.NewWriter(w)
+	if err := cw.Write([]string{"일시", "사용자ID", "이벤트유형", "파일명", "파일경로", "프로세스", "호스트명", "소스"}); err != nil {
+		h.logger.Error("export endpoint CSV header", "error", err)
+		return
+	}
 
 	for _, e := range events {
 		userID := ""
 		if e.UserID != nil {
 			userID = strconv.FormatInt(*e.UserID, 10)
 		}
-		line := fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,%s\n",
+		if err := cw.Write([]string{
 			e.EventTime.Format("2006-01-02 15:04:05"),
 			userID,
-			e.EventType,
-			csvEscapeField(e.FileName),
-			csvEscapeField(e.FilePath),
-			e.ProcessName,
-			e.Hostname,
-			e.Source,
-		)
-		w.Write([]byte(line))
+			csvSafeField(string(e.EventType)),
+			csvSafeField(e.FileName),
+			csvSafeField(e.FilePath),
+			csvSafeField(e.ProcessName),
+			csvSafeField(e.Hostname),
+			csvSafeField(e.Source),
+		}); err != nil {
+			h.logger.Error("export endpoint CSV row", "error", err)
+			return
+		}
+	}
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		h.logger.Error("export endpoint CSV flush", "error", err)
 	}
 }
 
-func csvEscapeField(s string) string {
-	for _, c := range s {
-		if c == ',' || c == '"' || c == '\n' || c == '\\' {
-			return "\"" + s + "\""
-		}
+func csvSafeField(s string) string {
+	if s == "" {
+		return ""
+	}
+	trimmed := strings.TrimLeft(s, " \t\r\n")
+	if trimmed == "" {
+		return s
+	}
+	switch trimmed[0] {
+	case '=', '+', '-', '@':
+		return "'" + s
 	}
 	return s
 }
 
 func (h *PageHandler) AdminMonitoringPage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+
 	data := h.pageData(r, "모니터링 설정", "admin-monitoring")
 
 	if h.monitorHandler != nil {
@@ -853,7 +1003,7 @@ func (h *PageHandler) AdminMonitoringPage(w http.ResponseWriter, r *http.Request
 }
 
 // buildBreadcrumbs walks up the folder tree to build navigation breadcrumbs.
-func (h *PageHandler) buildBreadcrumbs(r *http.Request, folderID *int64) []folder.Folder {
+func (h *PageHandler) buildBreadcrumbs(r *http.Request, folderID *int64, u *auth.AuthUser) []folder.Folder {
 	if folderID == nil {
 		return nil
 	}
@@ -862,6 +1012,9 @@ func (h *PageHandler) buildBreadcrumbs(r *http.Request, folderID *int64) []folde
 	for currentID != nil {
 		f, err := h.folderRepo.GetByID(r.Context(), *currentID)
 		if err != nil {
+			break
+		}
+		if allowed, err := h.hasFolderAccess(r, u, f.ID, folder.PermRead); err != nil || !allowed {
 			break
 		}
 		crumbs = append([]folder.Folder{*f}, crumbs...)

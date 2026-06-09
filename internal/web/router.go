@@ -28,12 +28,12 @@ type RouterDeps struct {
 	AuditRepo       *audit.Repository
 	AuditHandler    *audit.Handler
 	EndpointHandler *endpoint.Handler
-	AlertHandler     *alert.Handler
-	MonitorHandler   *monitoring.Handler
-	PageHandler      *PageHandler
-	FormHandler      *FormHandler
-	SSEHub           *SSEHub
-	Logger           *slog.Logger
+	AlertHandler    *alert.Handler
+	MonitorHandler  *monitoring.Handler
+	PageHandler     *PageHandler
+	FormHandler     *FormHandler
+	SSEHub          *SSEHub
+	Logger          *slog.Logger
 }
 
 func NewRouter(deps RouterDeps) http.Handler {
@@ -165,40 +165,44 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Get("/api/audit/export", deps.AuditHandler.ExportCSV)
 		r.Get("/api/audit/verify", deps.AuditHandler.VerifyIntegrity)
 
-		r.Get("/admin/users", deps.PageHandler.AdminUsersPage)
-		r.Get("/admin/alerts", deps.PageHandler.AdminAlertsPage)
-		r.Get("/admin/agents", deps.PageHandler.AdminAgentsPage)
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireRole(user.RoleAdmin))
+
+			r.Get("/admin/users", deps.PageHandler.AdminUsersPage)
+			r.Get("/admin/alerts", deps.PageHandler.AdminAlertsPage)
+			r.Get("/admin/agents", deps.PageHandler.AdminAgentsPage)
+			r.Post("/admin/users/create", deps.FormHandler.CreateUser)
+			r.Post("/admin/alerts/rules/create", deps.FormHandler.CreateAlertRule)
+			r.Post("/admin/alerts/{alertID}/acknowledge", deps.FormHandler.AcknowledgeAlert)
+			r.Get("/admin/users/{userID}/edit", deps.PageHandler.AdminUserEditPage)
+			r.Post("/admin/users/{userID}/edit", deps.FormHandler.EditUser)
+			r.Post("/admin/users/{userID}/reset-password", deps.FormHandler.ResetPassword)
+
+			// Monitoring config admin
+			r.Get("/admin/monitoring", deps.PageHandler.AdminMonitoringPage)
+			r.Post("/admin/monitoring/processes/add", deps.MonitorHandler.AddProcessGroup)
+			r.Post("/admin/monitoring/processes/{id}/delete", deps.MonitorHandler.DeleteProcessGroup)
+			r.Post("/admin/monitoring/processes/{id}/toggle", deps.MonitorHandler.ToggleProcessGroup)
+			r.Post("/admin/monitoring/extensions/add", deps.MonitorHandler.AddExtension)
+			r.Post("/admin/monitoring/extensions/{id}/delete", deps.MonitorHandler.DeleteExtension)
+			r.Post("/admin/monitoring/extensions/{id}/toggle", deps.MonitorHandler.ToggleExtension)
+			r.Post("/admin/monitoring/paths/add", deps.MonitorHandler.AddPath)
+			r.Post("/admin/monitoring/paths/{id}/delete", deps.MonitorHandler.DeletePath)
+			r.Post("/admin/monitoring/disguise/add", deps.MonitorHandler.AddDisguiseRule)
+			r.Post("/admin/monitoring/disguise/{id}/delete", deps.MonitorHandler.DeleteDisguiseRule)
+
+			// File tracking
+			r.Get("/admin/tracking", deps.PageHandler.AdminTrackingPage)
+			r.Post("/admin/tracking/add", deps.PageHandler.AdminTrackingAdd)
+			r.Post("/admin/tracking/{id}/delete", deps.PageHandler.AdminTrackingDelete)
+			r.Get("/admin/tracking/{id}/detections", deps.PageHandler.AdminTrackingDetections)
+		})
 
 		// Form POST handlers (accept form data, redirect)
 		r.Post("/files/upload", deps.FormHandler.UploadFile)
 		r.Post("/files/{fileID}/checkout", deps.FormHandler.CheckoutFile)
 		r.Post("/files/{fileID}/checkin", deps.FormHandler.CheckinFile)
 		r.Post("/folders/create", deps.FormHandler.CreateFolder)
-		r.Post("/admin/users/create", deps.FormHandler.CreateUser)
-		r.Post("/admin/alerts/rules/create", deps.FormHandler.CreateAlertRule)
-		r.Post("/admin/alerts/{alertID}/acknowledge", deps.FormHandler.AcknowledgeAlert)
-		r.Get("/admin/users/{userID}/edit", deps.PageHandler.AdminUserEditPage)
-		r.Post("/admin/users/{userID}/edit", deps.FormHandler.EditUser)
-		r.Post("/admin/users/{userID}/reset-password", deps.FormHandler.ResetPassword)
-
-		// Monitoring config admin
-		r.Get("/admin/monitoring", deps.PageHandler.AdminMonitoringPage)
-		r.Post("/admin/monitoring/processes/add", deps.MonitorHandler.AddProcessGroup)
-		r.Post("/admin/monitoring/processes/{id}/delete", deps.MonitorHandler.DeleteProcessGroup)
-		r.Post("/admin/monitoring/processes/{id}/toggle", deps.MonitorHandler.ToggleProcessGroup)
-		r.Post("/admin/monitoring/extensions/add", deps.MonitorHandler.AddExtension)
-		r.Post("/admin/monitoring/extensions/{id}/delete", deps.MonitorHandler.DeleteExtension)
-		r.Post("/admin/monitoring/extensions/{id}/toggle", deps.MonitorHandler.ToggleExtension)
-		r.Post("/admin/monitoring/paths/add", deps.MonitorHandler.AddPath)
-		r.Post("/admin/monitoring/paths/{id}/delete", deps.MonitorHandler.DeletePath)
-		r.Post("/admin/monitoring/disguise/add", deps.MonitorHandler.AddDisguiseRule)
-		r.Post("/admin/monitoring/disguise/{id}/delete", deps.MonitorHandler.DeleteDisguiseRule)
-
-		// File tracking
-		r.Get("/admin/tracking", deps.PageHandler.AdminTrackingPage)
-		r.Post("/admin/tracking/add", deps.PageHandler.AdminTrackingAdd)
-		r.Post("/admin/tracking/{id}/delete", deps.PageHandler.AdminTrackingDelete)
-		r.Get("/admin/tracking/{id}/detections", deps.PageHandler.AdminTrackingDetections)
 
 		// 2FA setup
 		r.Get("/account/2fa", deps.PageHandler.TwoFactorPage)

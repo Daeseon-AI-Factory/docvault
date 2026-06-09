@@ -116,6 +116,12 @@ func TestCSRFMiddlewareIssuesCookie(t *testing.T) {
 			if c.Value == "" {
 				t.Error("CSRF cookie should not be empty")
 			}
+			if !c.Secure {
+				t.Error("CSRF cookie should be Secure")
+			}
+			if c.SameSite != http.SameSiteStrictMode {
+				t.Error("CSRF cookie should use SameSite=Strict")
+			}
 		}
 	}
 	if !found {

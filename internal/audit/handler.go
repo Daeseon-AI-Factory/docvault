@@ -1,11 +1,12 @@
 package audit
 
 import (
+	"encoding/csv"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -22,7 +23,7 @@ func NewHandler(repo *Repository, logger *slog.Logger) *Handler {
 
 // UserTimeline handles GET /api/audit/users/{userID}
 func (h *Handler) UserTimeline(w http.ResponseWriter, r *http.Request) {
-	userIDStr := chi.URLParam(r,"userID")
+	userIDStr := chi.URLParam(r, "userID")
 	userID, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
 		http.Error(w, `{"error":"invalid user ID"}`, http.StatusBadRequest)
@@ -50,7 +51,7 @@ func (h *Handler) UserTimeline(w http.ResponseWriter, r *http.Request) {
 
 // FileTimeline handles GET /api/audit/files/{fileID}
 func (h *Handler) FileTimeline(w http.ResponseWriter, r *http.Request) {
-	fileIDStr := chi.URLParam(r,"fileID")
+	fileIDStr := chi.URLParam(r, "fileID")
 	fileID, err := strconv.ParseInt(fileIDStr, 10, 64)
 	if err != nil {
 		http.Error(w, `{"error":"invalid file ID"}`, http.StatusBadRequest)
@@ -190,33 +191,45 @@ func (h *Handler) ExportCSV(w http.ResponseWriter, r *http.Request) {
 
 	// BOM for Excel Korean compatibility
 	w.Write([]byte{0xEF, 0xBB, 0xBF})
-	w.Write([]byte("일시,사용자ID,행위,대상유형,대상ID,대상명,IP주소,상태코드,해시\n"))
+	cw := csv.NewWriter(w)
+	if err := cw.Write([]string{"일시", "사용자ID", "행위", "대상유형", "대상ID", "대상명", "IP주소", "상태코드", "해시"}); err != nil {
+		h.logger.Error("export CSV header", "error", err)
+		return
+	}
 
 	for _, log := range logs {
-		line := fmt.Sprintf("%s,%d,%s,%s,%s,%s,%s,%d,%s\n",
+		if err := cw.Write([]string{
 			log.CreatedAt.Format("2006-01-02 15:04:05"),
-			log.UserID,
-			log.Action,
-			log.TargetType,
+			strconv.FormatInt(log.UserID, 10),
+			csvSafe(string(log.Action)),
+			csvSafe(log.TargetType),
 			formatNullableInt(log.TargetID),
-			csvEscape(log.TargetName),
-			log.IPAddress,
-			log.StatusCode,
-			log.RowHash,
-		)
-		w.Write([]byte(line))
+			csvSafe(log.TargetName),
+			csvSafe(log.IPAddress),
+			strconv.Itoa(log.StatusCode),
+			csvSafe(log.RowHash),
+		}); err != nil {
+			h.logger.Error("export CSV row", "error", err)
+			return
+		}
+	}
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		h.logger.Error("export CSV flush", "error", err)
 	}
 }
 
-func csvEscape(s string) string {
+func csvSafe(s string) string {
 	if s == "" {
 		return ""
 	}
-	// If contains comma or quote, wrap in quotes
-	for _, c := range s {
-		if c == ',' || c == '"' || c == '\n' {
-			return "\"" + s + "\""
-		}
+	trimmed := strings.TrimLeft(s, " \t\r\n")
+	if trimmed == "" {
+		return s
+	}
+	switch trimmed[0] {
+	case '=', '+', '-', '@':
+		return "'" + s
 	}
 	return s
 }

@@ -17,9 +17,10 @@ func TestTokenRefreshMiddlewareRefreshesExpiringToken(t *testing.T) {
 
 	// Create a token that expires in 3 minutes (within 5min threshold)
 	claims := &Claims{
-		UserID:   u.ID,
-		Username: u.Username,
-		Role:     u.Role,
+		UserID:    u.ID,
+		Username:  u.Username,
+		Role:      u.Role,
+		TokenType: tokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(3 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -50,6 +51,12 @@ func TestTokenRefreshMiddlewareRefreshesExpiringToken(t *testing.T) {
 	for _, c := range cookies {
 		if c.Name == "token" && c.Value != tokenStr {
 			foundNewToken = true
+			if !c.Secure {
+				t.Error("refreshed token cookie should be Secure")
+			}
+			if !c.HttpOnly {
+				t.Error("refreshed token cookie should be HttpOnly")
+			}
 		}
 	}
 

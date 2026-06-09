@@ -10,6 +10,7 @@ func TestLoadRequiredFields(t *testing.T) {
 	os.Unsetenv("DOCVAULT_DB_URL")
 	os.Unsetenv("DOCVAULT_MASTER_KEY")
 	os.Unsetenv("DOCVAULT_JWT_SECRET")
+	os.Unsetenv("DOCVAULT_OSQUERY_PSK")
 
 	_, err := Load()
 	if err == nil {
@@ -29,6 +30,12 @@ func TestLoadRequiredFields(t *testing.T) {
 	}
 
 	os.Setenv("DOCVAULT_JWT_SECRET", "testsecret")
+	_, err = Load()
+	if err == nil {
+		t.Error("should fail when DOCVAULT_OSQUERY_PSK is missing")
+	}
+
+	os.Setenv("DOCVAULT_OSQUERY_PSK", "test-psk")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("should succeed with all required fields: %v", err)
@@ -43,6 +50,7 @@ func TestLoadDefaults(t *testing.T) {
 	os.Setenv("DOCVAULT_DB_URL", "postgres://localhost/test")
 	os.Setenv("DOCVAULT_MASTER_KEY", "testkey")
 	os.Setenv("DOCVAULT_JWT_SECRET", "testsecret")
+	os.Setenv("DOCVAULT_OSQUERY_PSK", "test-psk")
 	os.Unsetenv("DOCVAULT_LISTEN_ADDR")
 	os.Unsetenv("DOCVAULT_VAULT_PATH")
 

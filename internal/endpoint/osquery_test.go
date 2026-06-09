@@ -211,6 +211,67 @@ func TestNormalizeUSBCopy(t *testing.T) {
 	}
 }
 
+func TestPathBaseHandlesWindowsAndPOSIXPaths(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{"windows drive path", `C:\Users\kim\Documents\design.dwg`, "design.dwg"},
+		{"windows dir contains dot", `C:\Users\kim.v2\Documents\design.dwg`, "design.dwg"},
+		{"windows trailing slash", `C:\Users\kim\Documents\`, "Documents"},
+		{"unc path", `\\fileserver\engineering\designs\motor.step`, "motor.step"},
+		{"mixed separators", `C:\Users/kim\Desktop/spec.pdf`, "spec.pdf"},
+		{"posix path", `/home/kim/Documents/design.dwg`, "design.dwg"},
+		{"simple filename", `design.dwg`, "design.dwg"},
+		{"empty", ``, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pathBase(tt.path); got != tt.want {
+				t.Fatalf("pathBase(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPathExtHandlesWindowsAndPOSIXPaths(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{"windows drive path", `C:\Users\kim\Documents\design.dwg`, ".dwg"},
+		{"dot in directory is ignored", `C:\Users\kim.v2\Documents\README`, ""},
+		{"unc path", `\\fileserver\engineering\archive.tar.gz`, ".gz"},
+		{"hidden file without extension", `.env`, ""},
+		{"trailing dot", `C:\Temp\filename.`, ""},
+		{"posix path", `/home/kim/report.pdf`, ".pdf"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pathExt(tt.path); got != tt.want {
+				t.Fatalf("pathExt(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractProcessNameHandlesWindowsPathsOnNonWindowsHosts(t *testing.T) {
+	result := OsqueryResult{
+		Name: "process_events",
+		Columns: map[string]string{
+			"path": `C:\Program Files\AutoCAD\acad.exe`,
+		},
+	}
+
+	if got := extractProcessName(result); got != "acad.exe" {
+		t.Fatalf("extractProcessName() = %q, want acad.exe", got)
+	}
+}
+
 func TestExtensionChangeDetection(t *testing.T) {
 	batch := &OsqueryBatch{
 		Results: []OsqueryResult{

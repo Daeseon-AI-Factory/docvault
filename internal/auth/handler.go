@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Handler struct {
@@ -101,7 +101,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims, err := h.jwt.ValidateToken(req.RefreshToken)
+	claims, err := h.jwt.ValidateRefreshToken(req.RefreshToken)
 	if err != nil {
 		http.Error(w, `{"error":"invalid refresh token"}`, http.StatusUnauthorized)
 		return
@@ -153,4 +153,3 @@ func (h *Handler) findUserByID(ctx context.Context, id int64) (*user.User, error
 	}
 	return &u, nil
 }
-

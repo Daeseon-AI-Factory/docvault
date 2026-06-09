@@ -2,7 +2,6 @@ package endpoint
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -130,7 +129,7 @@ func mapOsqueryAction(queryName, action string, columns map[string]string) Event
 func extractFileName(result OsqueryResult) string {
 	for _, key := range []string{"target_path", "accessed_file", "spool_file", "path"} {
 		if v := result.Columns[key]; v != "" {
-			return filepath.Base(v)
+			return pathBase(v)
 		}
 	}
 	return ""
@@ -155,9 +154,40 @@ func extractProcessName(result OsqueryResult) string {
 		return v
 	}
 	if v := result.Columns["path"]; v != "" && result.Name == "process_events" {
-		return filepath.Base(v)
+		return pathBase(v)
 	}
 	return ""
+}
+
+func pathBase(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	p = strings.TrimRight(p, `\/`)
+	if p == "" {
+		return ""
+	}
+
+	lastSlash := strings.LastIndex(p, "/")
+	lastBackslash := strings.LastIndex(p, `\`)
+	idx := lastSlash
+	if lastBackslash > idx {
+		idx = lastBackslash
+	}
+	if idx >= 0 && idx < len(p)-1 {
+		return p[idx+1:]
+	}
+	return p
+}
+
+func pathExt(p string) string {
+	base := pathBase(p)
+	idx := strings.LastIndex(base, ".")
+	if idx <= 0 || idx == len(base)-1 {
+		return ""
+	}
+	return base[idx:]
 }
 
 // isExtensionChangedWithChecker uses the configurable checker if available.
@@ -167,11 +197,11 @@ func isExtensionChangedWithChecker(columns map[string]string, checker ExtensionD
 		return false
 	}
 
-	newExt := strings.ToLower(filepath.Ext(targetPath))
+	newExt := strings.ToLower(pathExt(targetPath))
 
 	// If we have old_path, use the checker (DB-based or fallback)
 	if oldPath := columns["old_path"]; oldPath != "" {
-		oldExt := strings.ToLower(filepath.Ext(oldPath))
+		oldExt := strings.ToLower(pathExt(oldPath))
 		if oldExt == newExt {
 			return false // same extension, not a disguise
 		}
@@ -207,7 +237,7 @@ func isExtensionChanged(columns map[string]string) bool {
 		return false
 	}
 
-	ext := strings.ToLower(filepath.Ext(targetPath))
+	ext := strings.ToLower(pathExt(targetPath))
 
 	suspiciousExts := map[string]bool{
 		".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".bmp": true,
@@ -227,7 +257,7 @@ func isExtensionChanged(columns map[string]string) bool {
 	}
 
 	if oldPath := columns["old_path"]; oldPath != "" {
-		oldExt := strings.ToLower(filepath.Ext(oldPath))
+		oldExt := strings.ToLower(pathExt(oldPath))
 		newExt := ext
 		if docExts[oldExt] && !docExts[newExt] {
 			return true

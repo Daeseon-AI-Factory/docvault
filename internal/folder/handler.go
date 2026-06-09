@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/auth"
+	userpkg "github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
 )
 
 type Handler struct {
@@ -18,6 +19,30 @@ type Handler struct {
 
 func NewHandler(repo *Repository, logger *slog.Logger) *Handler {
 	return &Handler{repo: repo, logger: logger}
+}
+
+func (h *Handler) hasAccess(r *http.Request, authUser *auth.AuthUser, folderID int64, required Permission) (bool, error) {
+	if authUser == nil {
+		return false, nil
+	}
+	if authUser.Role == userpkg.RoleAdmin {
+		return true, nil
+	}
+	return h.repo.CheckAccess(r.Context(), folderID, authUser.ID, required)
+}
+
+func (h *Handler) requireAccess(w http.ResponseWriter, r *http.Request, authUser *auth.AuthUser, folderID int64, required Permission) bool {
+	allowed, err := h.hasAccess(r, authUser, folderID, required)
+	if err != nil {
+		h.logger.Error("folder: check access", "error", err, "folder_id", folderID, "user_id", authUser.ID)
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		return false
+	}
+	if !allowed {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 type createFolderRequest struct {
@@ -50,7 +75,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 			return
 		}
-		if !hasAccess && user.Role != "admin" {
+		if !hasAccess && user.Role != userpkg.RoleAdmin {
 			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 			return
 		}
@@ -74,6 +99,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
 	idStr := chi.URLParam(r, "folderID")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -86,12 +117,21 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"folder not found"}`, http.StatusNotFound)
 		return
 	}
+	if !h.requireAccess(w, r, user, id, PermRead) {
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(f)
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
 	var parentID *int64
 	if pidStr := r.URL.Query().Get("parent_id"); pidStr != "" {
 		pid, err := strconv.ParseInt(pidStr, 10, 64)
@@ -101,12 +141,30 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		parentID = &pid
 	}
+	if parentID != nil && !h.requireAccess(w, r, user, *parentID, PermRead) {
+		return
+	}
 
 	folders, err := h.repo.ListChildren(r.Context(), parentID)
 	if err != nil {
 		h.logger.Error("list folders", "error", err)
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
+	}
+	if user.Role != userpkg.RoleAdmin {
+		filtered := folders[:0]
+		for _, f := range folders {
+			allowed, err := h.hasAccess(r, user, f.ID, PermRead)
+			if err != nil {
+				h.logger.Error("folder: filter list access", "error", err, "folder_id", f.ID, "user_id", user.ID)
+				http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+				return
+			}
+			if allowed {
+				filtered = append(filtered, f)
+			}
+		}
+		folders = filtered
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -134,7 +192,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hasAccess, _ := h.repo.CheckAccess(r.Context(), id, user.ID, PermAdmin)
-	if !hasAccess && user.Role != "admin" {
+	if !hasAccess && user.Role != userpkg.RoleAdmin {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
@@ -169,7 +227,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hasAccess, _ := h.repo.CheckAccess(r.Context(), id, user.ID, PermAdmin)
-	if !hasAccess && user.Role != "admin" {
+	if !hasAccess && user.Role != userpkg.RoleAdmin {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
@@ -205,7 +263,7 @@ func (h *Handler) SetPermission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hasAccess, _ := h.repo.CheckAccess(r.Context(), folderID, user.ID, PermAdmin)
-	if !hasAccess && user.Role != "admin" {
+	if !hasAccess && user.Role != userpkg.RoleAdmin {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
@@ -240,10 +298,19 @@ func (h *Handler) SetPermission(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListPermissions(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
 	idStr := chi.URLParam(r, "folderID")
 	folderID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		http.Error(w, `{"error":"invalid folder ID"}`, http.StatusBadRequest)
+		return
+	}
+	if !h.requireAccess(w, r, user, folderID, PermAdmin) {
 		return
 	}
 
@@ -282,7 +349,7 @@ func (h *Handler) RemovePermission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hasAccess, _ := h.repo.CheckAccess(r.Context(), folderID, user.ID, PermAdmin)
-	if !hasAccess && user.Role != "admin" {
+	if !hasAccess && user.Role != userpkg.RoleAdmin {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}

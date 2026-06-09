@@ -98,6 +98,25 @@ func NewHandler(repo *Repository, db *pgxpool.Pool, psk string, alertEval AlertE
 	}
 }
 
+func (h *Handler) requirePSK(w http.ResponseWriter, r *http.Request, headerNames ...string) bool {
+	if h.psk == "" {
+		if h.logger != nil {
+			h.logger.Error("agent endpoint requested without configured PSK")
+		}
+		http.Error(w, `{"error":"agent authentication is not configured"}`, http.StatusServiceUnavailable)
+		return false
+	}
+
+	for _, name := range headerNames {
+		if r.Header.Get(name) == h.psk {
+			return true
+		}
+	}
+
+	http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+	return false
+}
+
 // lookupUserByHostname resolves hostname to user_id from endpoint_agents table.
 func (h *Handler) lookupUserByHostname(ctx context.Context, hostname string) *int64 {
 	var userID int64
@@ -123,12 +142,8 @@ func (h *Handler) buildHostnameMap(ctx context.Context, hostnames []string) map[
 
 // ReceiveOsquery handles POST /api/events/osquery
 func (h *Handler) ReceiveOsquery(w http.ResponseWriter, r *http.Request) {
-	if h.psk != "" {
-		token := r.Header.Get("X-Osquery-PSK")
-		if token != h.psk {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-			return
-		}
+	if !h.requirePSK(w, r, "X-Osquery-PSK") {
+		return
 	}
 
 	var batch OsqueryBatch
@@ -211,12 +226,8 @@ func (h *Handler) ReceiveOsquery(w http.ResponseWriter, r *http.Request) {
 
 // ReceiveClipboard handles POST /api/events/clipboard
 func (h *Handler) ReceiveClipboard(w http.ResponseWriter, r *http.Request) {
-	if h.psk != "" {
-		token := r.Header.Get("X-Agent-PSK")
-		if token != h.psk {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-			return
-		}
+	if !h.requirePSK(w, r, "X-Agent-PSK") {
+		return
 	}
 
 	var ce ClipboardEvent
@@ -255,15 +266,8 @@ func (h *Handler) ReceiveClipboard(w http.ResponseWriter, r *http.Request) {
 
 // Enroll handles POST /api/enroll — registers an agent's hostname-to-user mapping.
 func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
-	if h.psk != "" {
-		token := r.Header.Get("X-Agent-PSK")
-		if token == "" {
-			token = r.Header.Get("X-Osquery-PSK")
-		}
-		if token != h.psk {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-			return
-		}
+	if !h.requirePSK(w, r, "X-Agent-PSK", "X-Osquery-PSK") {
+		return
 	}
 
 	var req struct {
@@ -320,12 +324,8 @@ func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 
 // AgentConfig handles POST /api/config — serves dynamic osquery config from DB.
 func (h *Handler) AgentConfig(w http.ResponseWriter, r *http.Request) {
-	if h.psk != "" {
-		token := r.Header.Get("X-Osquery-PSK")
-		if token != h.psk {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-			return
-		}
+	if !h.requirePSK(w, r, "X-Osquery-PSK") {
+		return
 	}
 
 	cfg := h.buildOsqueryConfig(r.Context())

@@ -2,8 +2,10 @@ package folder
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -153,18 +155,53 @@ func (r *Repository) RemovePermission(ctx context.Context, folderID, userID int6
 }
 
 // CheckAccess checks if a user has at least the required permission level on a folder.
-// Permission hierarchy: admin > write > read
+// Permission hierarchy: admin > write > read.
+// Folder creators implicitly administer their own folders. Explicit permissions on a
+// parent folder also apply to its descendants, matching the folder tree users browse.
 func (r *Repository) CheckAccess(ctx context.Context, folderID, userID int64, required Permission) (bool, error) {
-	fp, err := r.GetPermission(ctx, folderID, userID)
-	if err != nil {
-		return false, nil // no permission = no access
-	}
-
 	hierarchy := map[Permission]int{
 		PermRead:  1,
 		PermWrite: 2,
 		PermAdmin: 3,
 	}
 
-	return hierarchy[fp.Permission] >= hierarchy[required], nil
+	requiredLevel, ok := hierarchy[required]
+	if !ok {
+		return false, fmt.Errorf("unknown permission %q", required)
+	}
+
+	currentID := &folderID
+	for depth := 0; currentID != nil && depth < 100; depth++ {
+		var createdBy int64
+		var parentID *int64
+		err := r.db.QueryRow(ctx,
+			`SELECT created_by, parent_id
+			 FROM folders WHERE id = $1 AND is_deleted = false`, *currentID,
+		).Scan(&createdBy, &parentID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf("get folder %d for access check: %w", *currentID, err)
+		}
+		if createdBy == userID {
+			return true, nil
+		}
+
+		fp, err := r.GetPermission(ctx, *currentID, userID)
+		if err == nil && hierarchy[fp.Permission] >= requiredLevel {
+			return true, nil
+		}
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return false, fmt.Errorf("get permission for folder %d user %d: %w", *currentID, userID, err)
+		}
+
+		currentID = parentID
+	}
+
+	if currentID != nil {
+		return false, fmt.Errorf("folder %d ancestry exceeds maximum depth", folderID)
+	}
+
+	return false, nil
 }

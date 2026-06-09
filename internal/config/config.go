@@ -11,7 +11,7 @@ type Config struct {
 	VaultPath    string
 	JWTSecret    string
 	ListenAddr   string
-	OsqueryPSK  string
+	OsqueryPSK   string
 	SlackWebhook string
 	AlertEmail   string
 }
@@ -23,7 +23,7 @@ func Load() (*Config, error) {
 		VaultPath:    os.Getenv("DOCVAULT_VAULT_PATH"),
 		JWTSecret:    os.Getenv("DOCVAULT_JWT_SECRET"),
 		ListenAddr:   os.Getenv("DOCVAULT_LISTEN_ADDR"),
-		OsqueryPSK:  os.Getenv("DOCVAULT_OSQUERY_PSK"),
+		OsqueryPSK:   os.Getenv("DOCVAULT_OSQUERY_PSK"),
 		SlackWebhook: os.Getenv("DOCVAULT_SLACK_WEBHOOK"),
 		AlertEmail:   os.Getenv("DOCVAULT_ALERT_EMAIL"),
 	}
@@ -39,6 +39,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.JWTSecret == "" {
 		return nil, fmt.Errorf("DOCVAULT_JWT_SECRET is required")
+	}
+	if cfg.OsqueryPSK == "" {
+		return nil, fmt.Errorf("DOCVAULT_OSQUERY_PSK is required")
 	}
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = ":8080"

@@ -31,6 +31,7 @@ func CSRFMiddleware(secret string) func(http.Handler) http.Handler {
 					Value:    token,
 					Path:     "/",
 					HttpOnly: false, // JS needs to read it for AJAX
+					Secure:   true,
 					SameSite: http.SameSiteStrictMode,
 					MaxAge:   csrfMaxAge,
 				})

@@ -33,7 +33,7 @@ func Middleware(jwtSvc *JWTService) func(http.Handler) http.Handler {
 				return
 			}
 
-			claims, err := jwtSvc.ValidateToken(tokenString)
+			claims, err := jwtSvc.ValidateAccessToken(tokenString)
 			if err != nil {
 				http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
 				return
@@ -82,7 +82,7 @@ func WebMiddleware(jwtSvc *JWTService) func(http.Handler) http.Handler {
 				return
 			}
 
-			claims, err := jwtSvc.ValidateToken(tokenString)
+			claims, err := jwtSvc.ValidateAccessToken(tokenString)
 			if err != nil {
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
 				return
@@ -107,7 +107,7 @@ func TokenRefreshMiddleware(jwtSvc *JWTService) func(http.Handler) http.Handler 
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cookie, err := r.Cookie("token")
 			if err == nil && cookie.Value != "" {
-				claims, err := jwtSvc.ValidateToken(cookie.Value)
+				claims, err := jwtSvc.ValidateAccessToken(cookie.Value)
 				if err == nil && claims.ExpiresAt != nil {
 					remaining := time.Until(claims.ExpiresAt.Time)
 					if remaining > 0 && remaining < 5*time.Minute {
@@ -120,7 +120,7 @@ func TokenRefreshMiddleware(jwtSvc *JWTService) func(http.Handler) http.Handler 
 						if pair, err := jwtSvc.GenerateTokenPair(u); err == nil {
 							http.SetCookie(w, &http.Cookie{
 								Name: "token", Value: pair.AccessToken, Path: "/",
-								HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 900,
+								HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, MaxAge: 900,
 							})
 						}
 					}

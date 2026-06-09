@@ -52,6 +52,46 @@ func NewFormHandler(deps FormHandlerDeps) *FormHandler {
 	}
 }
 
+func (h *FormHandler) requireAdmin(w http.ResponseWriter, r *http.Request) (*auth.AuthUser, bool) {
+	u := auth.UserFromContext(r.Context())
+	if u == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return nil, false
+	}
+	if u.Role != user.RoleAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return nil, false
+	}
+	return u, true
+}
+
+func (h *FormHandler) hasFolderAccess(r *http.Request, u *auth.AuthUser, folderID int64, required folder.Permission) (bool, error) {
+	if u == nil {
+		return false, nil
+	}
+	if u.Role == user.RoleAdmin {
+		return true, nil
+	}
+	if h.folderRepo == nil {
+		return false, nil
+	}
+	return h.folderRepo.CheckAccess(r.Context(), folderID, u.ID, required)
+}
+
+func (h *FormHandler) requireFolderAccess(w http.ResponseWriter, r *http.Request, u *auth.AuthUser, folderID int64, required folder.Permission) bool {
+	allowed, err := h.hasFolderAccess(r, u, folderID, required)
+	if err != nil {
+		h.logger.Error("form: check folder access", "error", err, "folder_id", folderID, "user_id", u.ID)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return false
+	}
+	if !allowed {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 // UploadFile handles POST /files/upload (multipart form)
 func (h *FormHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	u := auth.UserFromContext(r.Context())
@@ -61,7 +101,18 @@ func (h *FormHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	folderIDStr := r.FormValue("folder_id")
-	folderID, _ := strconv.ParseInt(folderIDStr, 10, 64)
+	if folderIDStr == "" {
+		http.Error(w, "folder_id is required", http.StatusBadRequest)
+		return
+	}
+	folderID, err := strconv.ParseInt(folderIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid folder_id", http.StatusBadRequest)
+		return
+	}
+	if !h.requireFolderAccess(w, r, u, folderID, folder.PermWrite) {
+		return
+	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 500<<20)
 	mpFile, header, err := r.FormFile("file")
@@ -172,10 +223,24 @@ func (h *FormHandler) CheckoutFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fileIDStr := chi.URLParam(r, "fileID")
-	fileID, _ := strconv.ParseInt(fileIDStr, 10, 64)
+	fileID, err := strconv.ParseInt(fileIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid file ID", http.StatusBadRequest)
+		return
+	}
+	file, err := h.vaultRepo.GetFileByID(r.Context(), fileID)
+	if err != nil {
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+	if !h.requireFolderAccess(w, r, u, file.FolderID, folder.PermWrite) {
+		return
+	}
 
 	if err := h.vaultRepo.Checkout(r.Context(), fileID, u.ID); err != nil {
 		h.logger.Error("form checkout", "error", err)
+		http.Error(w, "file is already checked out or not found", http.StatusConflict)
+		return
 	}
 
 	http.Redirect(w, r, fmt.Sprintf("/files/%d", fileID), http.StatusSeeOther)
@@ -190,50 +255,93 @@ func (h *FormHandler) CheckinFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fileIDStr := chi.URLParam(r, "fileID")
-	fileID, _ := strconv.ParseInt(fileIDStr, 10, 64)
+	fileID, err := strconv.ParseInt(fileIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid file ID", http.StatusBadRequest)
+		return
+	}
+	file, err := h.vaultRepo.GetFileByID(r.Context(), fileID)
+	if err != nil {
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+	if !h.requireFolderAccess(w, r, u, file.FolderID, folder.PermWrite) {
+		return
+	}
 
 	// Check for new file version
 	mpFile, _, err := r.FormFile("file")
 	if err == nil {
 		defer mpFile.Close()
 
-		file, err := h.vaultRepo.GetFileByID(r.Context(), fileID)
-		if err == nil {
-			newVersion := file.CurrentVersion + 1
-			comment := r.FormValue("comment")
+		newVersion := file.CurrentVersion + 1
+		comment := r.FormValue("comment")
 
-			plainKey, encryptedKey, nonce, _ := h.keyManager.GenerateFileKey()
-			hasher := sha256.New()
-			teeReader := io.TeeReader(mpFile, hasher)
+		plainKey, encryptedKey, nonce, err := h.keyManager.GenerateFileKey()
+		if err != nil {
+			h.logger.Error("form checkin: generate key", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		hasher := sha256.New()
+		teeReader := io.TeeReader(mpFile, hasher)
 
-			storagePath := h.vaultStorage.StoragePath(fileID, newVersion)
-			contentNonce := make([]byte, 16)
-			copy(contentNonce, nonce)
-			if len(nonce) < 16 {
-				contentNonce = append(nonce, make([]byte, 16-len(nonce))...)
-			}
+		storagePath := h.vaultStorage.StoragePath(fileID, newVersion)
+		contentNonce := make([]byte, 16)
+		copy(contentNonce, nonce)
+		if len(nonce) < 16 {
+			contentNonce = append(nonce, make([]byte, 16-len(nonce))...)
+		}
 
-			encryptedSize, writeErr := h.vaultStorage.Write(storagePath, plainKey, contentNonce, teeReader)
-			if writeErr == nil {
-				sha256Hash := hex.EncodeToString(hasher.Sum(nil))
+		encryptedSize, err := h.vaultStorage.Write(storagePath, plainKey, contentNonce, teeReader)
+		if err != nil {
+			h.logger.Error("form checkin: write", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		sha256Hash := hex.EncodeToString(hasher.Sum(nil))
 
-				tx, _ := h.vaultRepo.BeginTx(r.Context())
-				if tx != nil {
-					defer tx.Rollback(r.Context())
-					v := &vault.FileVersion{
-						FileID: fileID, VersionNumber: newVersion, StoragePath: storagePath,
-						SizeBytes: encryptedSize, SHA256Hash: sha256Hash,
-						EncryptedKey: encryptedKey, Nonce: nonce, UploadedBy: u.ID, Comment: comment,
-					}
-					h.vaultRepo.CreateFileVersion(r.Context(), tx, v)
-					h.vaultRepo.UpdateFileVersion(r.Context(), tx, fileID, newVersion, encryptedSize, sha256Hash)
-					tx.Commit(r.Context())
-				}
-			}
+		tx, err := h.vaultRepo.BeginTx(r.Context())
+		if err != nil {
+			h.logger.Error("form checkin: begin tx", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		defer tx.Rollback(r.Context())
+
+		v := &vault.FileVersion{
+			FileID:        fileID,
+			VersionNumber: newVersion,
+			StoragePath:   storagePath,
+			SizeBytes:     encryptedSize,
+			SHA256Hash:    sha256Hash,
+			EncryptedKey:  encryptedKey,
+			Nonce:         nonce,
+			UploadedBy:    u.ID,
+			Comment:       comment,
+		}
+		if err := h.vaultRepo.CreateFileVersion(r.Context(), tx, v); err != nil {
+			h.logger.Error("form checkin: create version", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if err := h.vaultRepo.UpdateFileVersion(r.Context(), tx, fileID, newVersion, encryptedSize, sha256Hash); err != nil {
+			h.logger.Error("form checkin: update file", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			h.logger.Error("form checkin: commit", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
 		}
 	}
 
-	h.vaultRepo.Checkin(r.Context(), fileID, u.ID)
+	if err := h.vaultRepo.Checkin(r.Context(), fileID, u.ID); err != nil {
+		h.logger.Error("form checkin: release lock", "error", err)
+		http.Error(w, "file is not checked out by you", http.StatusConflict)
+		return
+	}
 	http.Redirect(w, r, fmt.Sprintf("/files/%d", fileID), http.StatusSeeOther)
 }
 
@@ -253,8 +361,15 @@ func (h *FormHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 
 	var parentID *int64
 	if pidStr := r.FormValue("parent_id"); pidStr != "" && pidStr != "0" {
-		pid, _ := strconv.ParseInt(pidStr, 10, 64)
+		pid, err := strconv.ParseInt(pidStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid parent_id", http.StatusBadRequest)
+			return
+		}
 		parentID = &pid
+	}
+	if parentID != nil && !h.requireFolderAccess(w, r, u, *parentID, folder.PermWrite) {
+		return
 	}
 
 	f := &folder.Folder{
@@ -278,6 +393,10 @@ func (h *FormHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 
 // CreateUser handles POST /admin/users/create
 func (h *FormHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+
 	username := r.FormValue("username")
 	email := r.FormValue("email")
 	password := r.FormValue("password")
@@ -316,9 +435,8 @@ func (h *FormHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 // CreateAlertRule handles POST /admin/alerts/rules/create
 func (h *FormHandler) CreateAlertRule(w http.ResponseWriter, r *http.Request) {
-	u := auth.UserFromContext(r.Context())
-	if u == nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+	u, ok := h.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 
@@ -357,9 +475,8 @@ func (h *FormHandler) CreateAlertRule(w http.ResponseWriter, r *http.Request) {
 
 // AcknowledgeAlert handles POST /admin/alerts/{alertID}/acknowledge
 func (h *FormHandler) AcknowledgeAlert(w http.ResponseWriter, r *http.Request) {
-	u := auth.UserFromContext(r.Context())
-	if u == nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+	u, ok := h.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 
@@ -372,8 +489,16 @@ func (h *FormHandler) AcknowledgeAlert(w http.ResponseWriter, r *http.Request) {
 
 // EditUser handles POST /admin/users/{userID}/edit
 func (h *FormHandler) EditUser(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+
 	idStr := chi.URLParam(r, "userID")
-	id, _ := strconv.ParseInt(idStr, 10, 64)
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid user ID", http.StatusBadRequest)
+		return
+	}
 
 	existing, err := h.userRepo.GetByID(r.Context(), id)
 	if err != nil {
@@ -404,8 +529,16 @@ func (h *FormHandler) EditUser(w http.ResponseWriter, r *http.Request) {
 
 // ResetPassword handles POST /admin/users/{userID}/reset-password
 func (h *FormHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+
 	idStr := chi.URLParam(r, "userID")
-	id, _ := strconv.ParseInt(idStr, 10, 64)
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid user ID", http.StatusBadRequest)
+		return
+	}
 
 	password := r.FormValue("password")
 	if password == "" {

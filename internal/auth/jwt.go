@@ -12,12 +12,17 @@ import (
 const (
 	accessTokenDuration  = 15 * time.Minute
 	refreshTokenDuration = 24 * time.Hour
+
+	tokenTypeAccess     = "access"
+	tokenTypeRefresh    = "refresh"
+	tokenTypePending2FA = "pending_2fa"
 )
 
 type Claims struct {
-	UserID   int64     `json:"user_id"`
-	Username string    `json:"username"`
-	Role     user.Role `json:"role"`
+	UserID    int64     `json:"user_id"`
+	Username  string    `json:"username"`
+	Role      user.Role `json:"role"`
+	TokenType string    `json:"token_type"`
 	jwt.RegisteredClaims
 }
 
@@ -42,7 +47,8 @@ func (s *JWTService) Secret() string {
 // GeneratePending2FAToken creates a short-lived token that proves password was verified.
 func (s *JWTService) GeneratePending2FAToken(userID int64) (string, error) {
 	claims := &Claims{
-		UserID: userID,
+		UserID:    userID,
+		TokenType: tokenTypePending2FA,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -62,16 +68,19 @@ func (s *JWTService) ValidatePending2FAToken(tokenStr string) (int64, error) {
 	if claims.Subject != "pending_2fa" {
 		return 0, fmt.Errorf("not a pending 2fa token")
 	}
+	if claims.TokenType != tokenTypePending2FA {
+		return 0, fmt.Errorf("not a pending 2fa token")
+	}
 	return claims.UserID, nil
 }
 
 func (s *JWTService) GenerateTokenPair(u *user.User) (*TokenPair, error) {
-	accessToken, err := s.generateToken(u, accessTokenDuration)
+	accessToken, err := s.generateToken(u, accessTokenDuration, tokenTypeAccess)
 	if err != nil {
 		return nil, fmt.Errorf("generate access token: %w", err)
 	}
 
-	refreshToken, err := s.generateToken(u, refreshTokenDuration)
+	refreshToken, err := s.generateToken(u, refreshTokenDuration, tokenTypeRefresh)
 	if err != nil {
 		return nil, fmt.Errorf("generate refresh token: %w", err)
 	}
@@ -82,16 +91,17 @@ func (s *JWTService) GenerateTokenPair(u *user.User) (*TokenPair, error) {
 	}, nil
 }
 
-func (s *JWTService) generateToken(u *user.User, duration time.Duration) (string, error) {
+func (s *JWTService) generateToken(u *user.User, duration time.Duration, tokenType string) (string, error) {
 	now := time.Now()
 	claims := &Claims{
-		UserID:   u.ID,
-		Username: u.Username,
-		Role:     u.Role,
+		UserID:    u.ID,
+		Username:  u.Username,
+		Role:      u.Role,
+		TokenType: tokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(duration)),
 			IssuedAt:  jwt.NewNumericDate(now),
-			Subject:   fmt.Sprintf("%d", u.ID),
+			Subject:   fmt.Sprintf("%s:%d", tokenType, u.ID),
 		},
 	}
 
@@ -115,5 +125,27 @@ func (s *JWTService) ValidateToken(tokenString string) (*Claims, error) {
 		return nil, fmt.Errorf("invalid token claims")
 	}
 
+	return claims, nil
+}
+
+func (s *JWTService) ValidateAccessToken(tokenString string) (*Claims, error) {
+	claims, err := s.ValidateToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+	if claims.TokenType != tokenTypeAccess {
+		return nil, fmt.Errorf("token is not an access token")
+	}
+	return claims, nil
+}
+
+func (s *JWTService) ValidateRefreshToken(tokenString string) (*Claims, error) {
+	claims, err := s.ValidateToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+	if claims.TokenType != tokenTypeRefresh {
+		return nil, fmt.Errorf("token is not a refresh token")
+	}
 	return claims, nil
 }

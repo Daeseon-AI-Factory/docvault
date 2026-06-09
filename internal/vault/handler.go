@@ -13,22 +13,53 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/auth"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/folder"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
 )
 
 type Handler struct {
 	repo       *Repository
+	folderRepo *folder.Repository
 	storage    *Storage
 	keyManager *KeyManager
 	logger     *slog.Logger
 }
 
-func NewHandler(repo *Repository, storage *Storage, km *KeyManager, logger *slog.Logger) *Handler {
+func NewHandler(repo *Repository, folderRepo *folder.Repository, storage *Storage, km *KeyManager, logger *slog.Logger) *Handler {
 	return &Handler{
 		repo:       repo,
+		folderRepo: folderRepo,
 		storage:    storage,
 		keyManager: km,
 		logger:     logger,
 	}
+}
+
+func (h *Handler) hasFolderAccess(r *http.Request, authUser *auth.AuthUser, folderID int64, required folder.Permission) (bool, error) {
+	if authUser == nil {
+		return false, nil
+	}
+	if authUser.Role == user.RoleAdmin {
+		return true, nil
+	}
+	if h.folderRepo == nil {
+		return false, nil
+	}
+	return h.folderRepo.CheckAccess(r.Context(), folderID, authUser.ID, required)
+}
+
+func (h *Handler) requireFolderAccess(w http.ResponseWriter, r *http.Request, authUser *auth.AuthUser, folderID int64, required folder.Permission) bool {
+	allowed, err := h.hasFolderAccess(r, authUser, folderID, required)
+	if err != nil {
+		h.logger.Error("vault: check folder access", "error", err, "folder_id", folderID, "user_id", authUser.ID)
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		return false
+	}
+	if !allowed {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 // Upload handles POST /api/files/upload?folder_id=X
@@ -48,6 +79,10 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	folderID, err := strconv.ParseInt(folderIDStr, 10, 64)
 	if err != nil {
 		http.Error(w, `{"error":"invalid folder_id"}`, http.StatusBadRequest)
+		return
+	}
+
+	if !h.requireFolderAccess(w, r, user, folderID, folder.PermWrite) {
 		return
 	}
 
@@ -185,6 +220,9 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
 		return
 	}
+	if !h.requireFolderAccess(w, r, user, file.FolderID, folder.PermRead) {
+		return
+	}
 
 	// Determine which version to download
 	var version *FileVersion
@@ -234,6 +272,12 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 
 // GetFile handles GET /api/files/{fileID}
 func (h *Handler) GetFile(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
 	fileIDStr := chi.URLParam(r, "fileID")
 	fileID, err := strconv.ParseInt(fileIDStr, 10, 64)
 	if err != nil {
@@ -244,6 +288,9 @@ func (h *Handler) GetFile(w http.ResponseWriter, r *http.Request) {
 	file, err := h.repo.GetFileByID(r.Context(), fileID)
 	if err != nil {
 		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+		return
+	}
+	if !h.requireFolderAccess(w, r, user, file.FolderID, folder.PermRead) {
 		return
 	}
 
@@ -263,6 +310,12 @@ func (h *Handler) GetFile(w http.ResponseWriter, r *http.Request) {
 
 // ListFiles handles GET /api/files?folder_id=X
 func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
 	folderIDStr := r.URL.Query().Get("folder_id")
 	if folderIDStr == "" {
 		http.Error(w, `{"error":"folder_id is required"}`, http.StatusBadRequest)
@@ -271,6 +324,10 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	folderID, err := strconv.ParseInt(folderIDStr, 10, 64)
 	if err != nil {
 		http.Error(w, `{"error":"invalid folder_id"}`, http.StatusBadRequest)
+		return
+	}
+
+	if !h.requireFolderAccess(w, r, user, folderID, folder.PermRead) {
 		return
 	}
 
@@ -302,8 +359,12 @@ func (h *Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.repo.GetFileByID(r.Context(), fileID); err != nil {
+	file, err := h.repo.GetFileByID(r.Context(), fileID)
+	if err != nil {
 		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+		return
+	}
+	if !h.requireFolderAccess(w, r, user, file.FolderID, folder.PermAdmin) {
 		return
 	}
 
@@ -328,6 +389,15 @@ func (h *Handler) Checkout(w http.ResponseWriter, r *http.Request) {
 	fileID, err := strconv.ParseInt(fileIDStr, 10, 64)
 	if err != nil {
 		http.Error(w, `{"error":"invalid file ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	file, err := h.repo.GetFileByID(r.Context(), fileID)
+	if err != nil {
+		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+		return
+	}
+	if !h.requireFolderAccess(w, r, user, file.FolderID, folder.PermWrite) {
 		return
 	}
 
@@ -363,6 +433,9 @@ func (h *Handler) Checkin(w http.ResponseWriter, r *http.Request) {
 	file, err := h.repo.GetFileByID(r.Context(), fileID)
 	if err != nil {
 		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+		return
+	}
+	if !h.requireFolderAccess(w, r, user, file.FolderID, folder.PermWrite) {
 		return
 	}
 
