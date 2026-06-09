@@ -150,6 +150,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(auth.TokenRefreshMiddleware(deps.JWTSvc))
 		r.Use(auth.WebMiddleware(deps.JWTSvc))
+		r.Use(audit.Middleware(deps.AuditRepo, deps.Logger))
 		r.Use(CSRFMiddleware(deps.JWTSvc.Secret()))
 
 		r.Get("/dashboard", deps.PageHandler.Dashboard)
