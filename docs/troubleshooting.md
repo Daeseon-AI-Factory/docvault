@@ -54,3 +54,16 @@ Full repository review found admin web routes protected only by login middleware
 - **Fix**: Commit `e0d498d` adds admin-only route grouping, folder permission checks for vault/page/form paths, inherited folder access with creator admin ownership, required `DOCVAULT_OSQUERY_PSK`, fail-closed agent PSK checks, JWT token-type validation, Secure auth/CSRF cookies, `encoding/csv` exports with spreadsheet formula escaping, and regression tests in `internal/audit/csv_test.go`, `internal/endpoint/handler_test.go`, and `internal/web/csv_test.go`.
 - **Commit**: e0d498d
 - **Pattern**: Access control should sit at route and repository/service boundaries, not only in templates or navigation.
+
+## Protected web actions were not all covered by audit logging
+
+- **Symptom**:
+
+```text
+`internal/web/router.go` attached `audit.Middleware` to the protected JSON API group only. Protected HTML form POST routes such as `/files/upload`, `/folders/create`, `/admin/users/create`, `/admin/monitoring/...`, `/admin/tracking/...`, and `/account/2fa/...` were in the cookie-authenticated web group without audit middleware. Public login/logout routes were also outside the protected audit middleware path.
+```
+
+- **Cause**: `audit.Middleware` derived actions for JSON API paths and required `auth.UserFromContext`, so public login routes could not be logged by that middleware. The middleware's `statusRecorder` also did not preserve `http.Flusher`, which could break SSE handlers wrapped by the audit middleware.
+- **Fix**: Commit `6df4c71` attaches `audit.Middleware` to the protected web group, adds action mappings for web form POSTs, preserves `http.Flusher`, and adds route/action tests. Commit `9f81995` adds explicit audit logging for API login, web login, 2FA login completion/failure, and logout after validating the session token.
+- **Commit**: 6df4c71, 9f81995
+- **Pattern**: Audit middleware covers authenticated request groups well, but authentication boundary events need explicit logging because the user context is created during the handler.
