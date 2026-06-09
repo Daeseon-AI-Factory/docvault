@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -45,7 +46,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
 
-	authHandler := auth.NewHandler(deps.DB, deps.JWTSvc, deps.Logger)
+	authHandler := auth.NewHandler(deps.DB, deps.JWTSvc, deps.Logger, auditAuthAction(deps.AuditRepo, deps.Logger))
 
 	// Static files
 	r.Handle("/static/*", http.StripPrefix("/static/", staticHandler()))
@@ -213,4 +214,26 @@ func NewRouter(deps RouterDeps) http.Handler {
 	})
 
 	return r
+}
+
+func auditAuthAction(repo *audit.Repository, logger *slog.Logger) auth.AuditLogFunc {
+	return func(ctx context.Context, userID int64, action string, statusCode int, r *http.Request) {
+		if repo == nil {
+			return
+		}
+
+		targetID := userID
+		entry := audit.Entry{
+			UserID:     userID,
+			Action:     audit.Action(action),
+			TargetType: "user",
+			TargetID:   &targetID,
+			IPAddress:  r.RemoteAddr,
+			UserAgent:  r.UserAgent(),
+			StatusCode: statusCode,
+		}
+		if err := repo.Log(ctx, entry); err != nil && logger != nil {
+			logger.Error("auth audit: log failed", "error", err, "action", action)
+		}
+	}
 }

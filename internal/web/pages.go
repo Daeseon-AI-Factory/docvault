@@ -245,7 +245,29 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.FullName, &u.Role, &u.Department, &u.IsActive,
 		&u.TOTPSecret, &u.TOTPEnabled, &u.CreatedAt, &u.UpdatedAt)
 
-	if err != nil || user.CheckPassword(u.PasswordHash, password) != nil || !u.IsActive {
+	if err != nil {
+		locked := h.rateLimiter.RecordFailure(ip)
+		remaining := h.rateLimiter.RemainingAttempts(ip)
+		errMsg := fmt.Sprintf("Invalid username or password (%d attempts remaining)", remaining)
+		if locked {
+			errMsg = "Account locked for 15 minutes due to too many failed attempts"
+		}
+		renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": errMsg, "CSRFToken": CSRFToken(r)})
+		return
+	}
+	if !u.IsActive {
+		h.logAudit(r, u.ID, audit.ActionLogin, http.StatusForbidden)
+		locked := h.rateLimiter.RecordFailure(ip)
+		remaining := h.rateLimiter.RemainingAttempts(ip)
+		errMsg := fmt.Sprintf("Invalid username or password (%d attempts remaining)", remaining)
+		if locked {
+			errMsg = "Account locked for 15 minutes due to too many failed attempts"
+		}
+		renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": errMsg, "CSRFToken": CSRFToken(r)})
+		return
+	}
+	if user.CheckPassword(u.PasswordHash, password) != nil {
+		h.logAudit(r, u.ID, audit.ActionLogin, http.StatusUnauthorized)
 		locked := h.rateLimiter.RecordFailure(ip)
 		remaining := h.rateLimiter.RemainingAttempts(ip)
 		errMsg := fmt.Sprintf("Invalid username or password (%d attempts remaining)", remaining)
@@ -271,6 +293,7 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 	// Success: clear rate limiter
 	h.rateLimiter.RecordSuccess(ip)
 	h.issueSessionCookies(w, &u)
+	h.logAudit(r, u.ID, audit.ActionLogin, http.StatusSeeOther)
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 
@@ -288,6 +311,25 @@ func (h *PageHandler) issueSessionCookies(w http.ResponseWriter, u *user.User) {
 		Name: "refresh_token", Value: tokens.RefreshToken, Path: "/",
 		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400,
 	})
+}
+
+func (h *PageHandler) logAudit(r *http.Request, userID int64, action audit.Action, statusCode int) {
+	if h.auditRepo == nil {
+		return
+	}
+	targetID := userID
+	entry := audit.Entry{
+		UserID:     userID,
+		Action:     action,
+		TargetType: "user",
+		TargetID:   &targetID,
+		IPAddress:  ExtractIP(r),
+		UserAgent:  r.UserAgent(),
+		StatusCode: statusCode,
+	}
+	if err := h.auditRepo.Log(r.Context(), entry); err != nil && h.logger != nil {
+		h.logger.Error("web audit: log failed", "error", err, "action", action)
+	}
 }
 
 // Login2FAPage shows the TOTP code input form.
@@ -346,6 +388,7 @@ func (h *PageHandler) Login2FASubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !valid {
+		h.logAudit(r, u.ID, audit.ActionLogin, http.StatusUnauthorized)
 		renderStandalone(w, h.tc, "login_2fa.html", map[string]interface{}{
 			"Error": "Invalid verification code", "CSRFToken": CSRFToken(r),
 		})
@@ -356,6 +399,7 @@ func (h *PageHandler) Login2FASubmit(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: "pending_2fa", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	h.rateLimiter.RecordSuccess(ExtractIP(r))
 	h.issueSessionCookies(w, &u)
+	h.logAudit(r, u.ID, audit.ActionLogin, http.StatusSeeOther)
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 }
 
@@ -531,6 +575,11 @@ func (h *PageHandler) AdminTrackingDetections(w http.ResponseWriter, r *http.Req
 }
 
 func (h *PageHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie("token"); err == nil && cookie.Value != "" {
+		if claims, err := h.jwtSvc.ValidateAccessToken(cookie.Value); err == nil {
+			h.logAudit(r, claims.UserID, audit.ActionLogout, http.StatusSeeOther)
+		}
+	}
 	http.SetCookie(w, &http.Cookie{Name: "token", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	http.SetCookie(w, &http.Cookie{Name: "refresh_token", Path: "/", MaxAge: -1, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)

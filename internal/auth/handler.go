@@ -12,13 +12,20 @@ import (
 )
 
 type Handler struct {
-	db     *pgxpool.Pool
-	jwt    *JWTService
-	logger *slog.Logger
+	db       *pgxpool.Pool
+	jwt      *JWTService
+	logger   *slog.Logger
+	auditLog AuditLogFunc
 }
 
-func NewHandler(db *pgxpool.Pool, jwt *JWTService, logger *slog.Logger) *Handler {
-	return &Handler{db: db, jwt: jwt, logger: logger}
+type AuditLogFunc func(ctx context.Context, userID int64, action string, statusCode int, r *http.Request)
+
+func NewHandler(db *pgxpool.Pool, jwt *JWTService, logger *slog.Logger, auditLog ...AuditLogFunc) *Handler {
+	h := &Handler{db: db, jwt: jwt, logger: logger}
+	if len(auditLog) > 0 {
+		h.auditLog = auditLog[0]
+	}
+	return h
 }
 
 type loginRequest struct {
@@ -59,17 +66,20 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !u.IsActive {
+		h.logAudit(r, u.ID, "login", http.StatusForbidden)
 		http.Error(w, `{"error":"account is disabled"}`, http.StatusForbidden)
 		return
 	}
 
 	if err := user.CheckPassword(u.PasswordHash, req.Password); err != nil {
+		h.logAudit(r, u.ID, "login", http.StatusUnauthorized)
 		http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
 		return
 	}
 
 	tokens, err := h.jwt.GenerateTokenPair(u)
 	if err != nil {
+		h.logAudit(r, u.ID, "login", http.StatusInternalServerError)
 		h.logger.Error("login: generate tokens", "error", err)
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
@@ -87,7 +97,15 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	h.logAudit(r, u.ID, "login", http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *Handler) logAudit(r *http.Request, userID int64, action string, statusCode int) {
+	if h.auditLog == nil {
+		return
+	}
+	h.auditLog(r.Context(), userID, action, statusCode, r)
 }
 
 type refreshRequest struct {

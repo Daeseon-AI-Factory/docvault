@@ -79,6 +79,8 @@ func deriveAction(method, path string) Action {
 	switch {
 	case method == "POST" && strings.HasSuffix(path, "/login"):
 		return ActionLogin
+	case method == "GET" && path == "/logout":
+		return ActionLogout
 	case method == "POST" && (path == "/api/files/upload" || path == "/files/upload"):
 		return ActionFileUpload
 	case method == "GET" && strings.Contains(path, "/download"):

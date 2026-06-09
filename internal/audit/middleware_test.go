@@ -14,6 +14,7 @@ func TestDeriveAction(t *testing.T) {
 	}{
 		// Auth
 		{"POST", "/api/auth/login", ActionLogin},
+		{"GET", "/logout", ActionLogout},
 
 		// Files
 		{"POST", "/api/files/upload", ActionFileUpload},
@@ -85,6 +86,7 @@ func TestDeriveActionCoversAllActions(t *testing.T) {
 	// Every defined Action constant should be reachable from deriveAction
 	allActions := map[Action]bool{
 		ActionLogin:                  false,
+		ActionLogout:                 false,
 		ActionFileUpload:             false,
 		ActionFileDownload:           false,
 		ActionFileDelete:             false,
@@ -113,6 +115,7 @@ func TestDeriveActionCoversAllActions(t *testing.T) {
 		path   string
 	}{
 		{"POST", "/api/auth/login"},
+		{"GET", "/logout"},
 		{"POST", "/api/files/upload"},
 		{"GET", "/api/files/1/download"},
 		{"DELETE", "/api/files/1"},
