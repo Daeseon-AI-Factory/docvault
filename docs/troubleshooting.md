@@ -120,3 +120,11 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Commit**: 5e6b325
 - **Pattern**: Bundle migrations into the deploy orchestration and refuse example secrets at startup, so a known-key deploy fails fast instead of silently running insecure.
 <!-- skipped: 4b1098a Log API 2FA enforcement and production deploy stack [no-log] -->
+
+## Backups were unencrypted and held password hashes / TOTP secrets
+
+- **Symptom**: deploy/backup/backup.sh wrote a plain pg_dump and an unencrypted vault tar to /opt/docvault/backups — including bcrypt password hashes and plaintext TOTP secrets — kept 30 days on the same host.
+- **Cause**: No encryption step, and pg_dump had no documented auth handling.
+- **Fix**: Commit 4cc9337d417acd68cf5181aec9027e6f614b5eda. backup.sh now pipes pg_dump and the vault tar through openssl enc -aes-256-cbc -pbkdf2, keyed by a separate /opt/docvault/backup.key; it fails closed if the key is missing, documents restore and off-host copy, and uses set -euo pipefail.
+- **Commit**: 4cc9337d417acd68cf5181aec9027e6f614b5eda
+- **Pattern**: A backup that contains secrets must be encrypted at rest with a key kept off the backed-up host.
