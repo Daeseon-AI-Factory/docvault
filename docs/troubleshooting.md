@@ -147,3 +147,11 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Fix**: Commit 308a01e3dcbd89f0c0bc3ca195ac48aee0856be8. Added a windows-latest CI job (build server+agent, vet, unit tests, and a service install/uninstall smoke via docvault-clip.exe). Bumped CI Go to 1.26. Added docs/WINDOWS_VM_TEST.md for manual clipboard verification in a UTM Windows-ARM VM, and landing/guide.html (bilingual KO/EN setup tutorial).
 - **Commit**: 308a01e3dcbd89f0c0bc3ca195ac48aee0856be8
 - **Pattern**: cross-platform agents need a CI job per target OS; GUI-only behavior (clipboard) still needs a VM or real device.
+
+## CI was red: clipagent did not build on Linux
+
+- **Symptom**: every GitHub Actions run failed at go build ./... with "cmd/clipagent/agent.go:59:14: undefined: getUsername". Local macOS builds passed, hiding it.
+- **Cause**: cmd/clipagent defined getUsername/newClipboardMonitor and platformMain only under windows and darwin build tags; on linux (CI ubuntu) none existed.
+- **Fix**: Commit 39b6cfdf3288e417849e4cc99dec355cbf268b04. Added clipboard_other.go and service_other.go (build tag !windows && !darwin) with a no-op clipboard monitor. Verified GOOS=linux/windows/darwin go build ./cmd/clipagent and GOOS=linux go build ./...
+- **Commit**: 39b6cfdf3288e417849e4cc99dec355cbf268b04
+- **Pattern**: platform _windows/_darwin files need a fallback for every OS CI builds on, or go build ./... breaks there. Watch CI status, not just local builds.
