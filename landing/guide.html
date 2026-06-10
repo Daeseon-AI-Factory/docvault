@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DocVault — 설치 가이드 / Setup Guide</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --ink:#0f172a; --muted:#64748b;
+    --line:#e2e8f0; --brand:#2563eb; --brand2:#1d4ed8; --ok:#16a34a;
+    --warn:#b45309; --warnbg:#fffbeb; --warnline:#fde68a; --code:#0b1220;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:var(--ink);background:#f8fafc;line-height:1.65}
+  a{color:var(--brand)}
+  header{position:sticky;top:0;z-index:10;background:var(--bg);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between}
+  .logo{font-weight:800;font-size:20px;letter-spacing:.3px}
+  .logo span{color:#60a5fa}
+  .langtoggle button{border:1px solid #334155;background:#0b1220;color:#cbd5e1;padding:7px 12px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600}
+  .langtoggle button.active{background:var(--brand);border-color:var(--brand);color:#fff}
+  .wrap{max-width:860px;margin:0 auto;padding:0 20px}
+  .hero{background:var(--bg);color:#fff;padding:46px 20px 60px}
+  .hero h1{font-size:30px;margin:0 0 10px;line-height:1.25}
+  .hero p{font-size:17px;color:#cbd5e1;margin:0;max-width:640px}
+  section{padding:38px 0;border-bottom:1px solid var(--line)}
+  h2{font-size:23px;margin:0 0 14px;display:flex;align-items:center;gap:10px}
+  h2 .ic{font-size:24px}
+  .lead{color:#334155;font-size:16px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:16px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+  .card .ic{font-size:26px}
+  .card b{display:block;margin:8px 0 4px;font-size:15px}
+  .card small{color:var(--muted)}
+  .analogy{background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:18px;margin-top:14px;color:#1e3a8a}
+  ol.steps{list-style:none;counter-reset:s;padding:0;margin:18px 0 0}
+  ol.steps>li{counter-increment:s;position:relative;padding:0 0 26px 56px;margin:0}
+  ol.steps>li:before{content:counter(s);position:absolute;left:0;top:0;width:38px;height:38px;border-radius:50%;background:var(--brand);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:17px}
+  ol.steps>li:after{content:"";position:absolute;left:18px;top:42px;bottom:6px;width:2px;background:var(--line)}
+  ol.steps>li:last-child:after{display:none}
+  ol.steps h3{margin:4px 0 8px;font-size:18px}
+  .code{position:relative;background:var(--code);color:#e2e8f0;border-radius:10px;padding:14px 44px 14px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13.5px;white-space:pre-wrap;word-break:break-all;margin:10px 0}
+  .code .copy{position:absolute;top:8px;right:8px;background:#1e293b;border:1px solid #334155;color:#cbd5e1;border-radius:7px;padding:4px 9px;font-size:12px;cursor:pointer}
+  .code .copy:active{background:var(--brand)}
+  .note{background:var(--warnbg);border:1px solid var(--warnline);color:var(--warn);border-radius:10px;padding:12px 14px;margin:12px 0;font-size:14.5px}
+  .ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:10px;padding:12px 14px;margin:12px 0;font-size:14.5px}
+  .faq dt{font-weight:700;margin-top:16px}
+  .faq dd{margin:6px 0 0;color:#334155}
+  footer{padding:30px 20px 60px;color:var(--muted);font-size:13px;text-align:center}
+  .pill{display:inline-block;background:#e0e7ff;color:#3730a3;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700;margin-left:8px;vertical-align:middle}
+  @media(max-width:560px){.hero h1{font-size:24px}h2{font-size:20px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Doc<span>Vault</span></div>
+  <div class="langtoggle">
+    <button id="b-ko" class="active" onclick="setLang('ko')">한국어</button>
+    <button id="b-en" onclick="setLang('en')">English</button>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <h1 data-i18n="hero_title"></h1>
+    <p data-i18n="hero_sub"></p>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <section>
+    <h2><span class="ic">🤔</span><span data-i18n="what_h"></span></h2>
+    <p class="lead" data-i18n="what_body"></p>
+    <div class="analogy" data-i18n="what_analogy"></div>
+  </section>
+
+  <section>
+    <h2><span class="ic">🛰️</span><span data-i18n="detect_h"></span></h2>
+    <p class="lead" data-i18n="detect_body"></p>
+    <div class="cards">
+      <div class="card"><div class="ic">💬</div><b data-i18n="d1_t"></b><small data-i18n="d1_b"></small></div>
+      <div class="card"><div class="ic">📧</div><b data-i18n="d2_t"></b><small data-i18n="d2_b"></small></div>
+      <div class="card"><div class="ic">🔌</div><b data-i18n="d3_t"></b><small data-i18n="d3_b"></small></div>
+      <div class="card"><div class="ic">☁️</div><b data-i18n="d4_t"></b><small data-i18n="d4_b"></small></div>
+      <div class="card"><div class="ic">📸</div><b data-i18n="d5_t"></b><small data-i18n="d5_b"></small></div>
+      <div class="card"><div class="ic">🏷️</div><b data-i18n="d6_t"></b><small data-i18n="d6_b"></small></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="ic">🧩</span><span data-i18n="how_h"></span></h2>
+    <p class="lead" data-i18n="how_body"></p>
+    <div class="cards">
+      <div class="card"><div class="ic">🖥️</div><b data-i18n="how1_t"></b><small data-i18n="how1_b"></small></div>
+      <div class="card"><div class="ic">💻</div><b data-i18n="how2_t"></b><small data-i18n="how2_b"></small></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="ic">🚀</span><span data-i18n="tut_h"></span><span class="pill" data-i18n="tut_pill"></span></h2>
+    <p class="lead" data-i18n="tut_intro"></p>
+
+    <ol class="steps">
+      <li>
+        <h3 data-i18n="s1_h"></h3>
+        <p data-i18n="s1_b"></p>
+      </li>
+      <li>
+        <h3 data-i18n="s2_h"></h3>
+        <p data-i18n="s2_b"></p>
+        <div class="code"><button class="copy" onclick="cp(this)">copy</button>git clone https://github.com/Daeseon-AI-Factory/docvault.git
+cd docvault
+bash scripts/deploy-server.sh localhost</div>
+        <p data-i18n="s2_b2"></p>
+      </li>
+      <li>
+        <h3 data-i18n="s3_h"></h3>
+        <p data-i18n="s3_b"></p>
+        <div class="ok" data-i18n="s3_ok"></div>
+      </li>
+      <li>
+        <h3 data-i18n="s4_h"></h3>
+        <p data-i18n="s4_b"></p>
+        <div class="code"><button class="copy" onclick="cp(this)">copy</button>.\install-agent.ps1 -ServerURL "https://YOUR-SERVER" -AgentPSK "PASTE-THE-PSK-HERE"</div>
+        <div class="note" data-i18n="s4_note"></div>
+      </li>
+      <li>
+        <h3 data-i18n="s5_h"></h3>
+        <p data-i18n="s5_b"></p>
+        <div class="ok" data-i18n="s5_ok"></div>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2><span class="ic">❓</span><span data-i18n="faq_h"></span></h2>
+    <dl class="faq">
+      <dt data-i18n="q1"></dt><dd data-i18n="a1"></dd>
+      <dt data-i18n="q2"></dt><dd data-i18n="a2"></dd>
+      <dt data-i18n="q3"></dt><dd data-i18n="a3"></dd>
+      <dt data-i18n="q4"></dt><dd data-i18n="a4"></dd>
+    </dl>
+  </section>
+
+</div>
+
+<footer>
+  <span data-i18n="foot"></span>
+</footer>
+
+<script>
+const I18N = {
+  ko: {
+    hero_title: "DocVault 설치 가이드 — 따라만 하면 됩니다",
+    hero_sub: "회사 문서가 메신저·USB·이메일로 몰래 빠져나가는지 감시하는 도구입니다. 컴퓨터를 잘 몰라도 이 순서대로 복사·붙여넣기만 하면 됩니다.",
+    what_h: "DocVault가 뭐예요?",
+    what_body: "직원 PC에서 중요한 회사 파일(설계도면·견적서·계약서 등)이 카카오톡·USB·이메일·클라우드로 빠져나가는 ‘기록’을 남기고, 의심스러운 행동을 한 화면에서 보여주는 도구입니다.",
+    what_analogy: "📹 쉽게 말하면 — <b>‘회사 문서 전용 CCTV’</b>입니다. 문 앞 CCTV가 누가 드나드는지 기록하듯, DocVault는 누가 어떤 파일을 어디로 보냈는지 기록합니다. (직원 동의 하에, 회사 소유 PC에서만 쓰는 도구입니다.)",
+    detect_h: "무엇을 잡아내나요?",
+    detect_body: "아래와 같은 ‘문서 유출이 의심되는 행동’을 자동으로 기록하고, 위험하면 알림을 띄웁니다.",
+    d1_t: "메신저 전송", d1_b: "카카오톡·텔레그램·슬랙으로 업무 파일 보내기",
+    d2_t: "이메일 첨부", d2_b: "외부 메일에 도면·문서 첨부",
+    d3_t: "USB 복사", d3_b: "이동식 USB로 파일 복사",
+    d4_t: "클라우드 업로드", d4_b: "구글드라이브·네이버 등에 업로드 추정",
+    d5_t: "화면 캡처", d5_b: "스크린샷·캡처 도구 실행",
+    d6_t: "확장자 위장", d6_b: "도면을 사진(.jpg)처럼 이름만 바꿔치기",
+    how_h: "어떻게 구성되나요?",
+    how_body: "딱 두 가지만 있으면 됩니다.",
+    how1_t: "① 서버 1대", how1_b: "기록을 모아 보여주는 ‘본부’. 클라우드 PC나 회사 PC 1대면 됩니다.",
+    how2_t: "② 작은 프로그램", how2_b: "감시할 직원 PC에 까는 가벼운 프로그램. 백그라운드에서 조용히 돕니다.",
+    tut_h: "설치 따라하기",
+    tut_pill: "약 20분",
+    tut_intro: "검은 화면(터미널/명령창)에 아래 글자들을 그대로 복사해서 붙여넣고 Enter만 누르면 됩니다. 어렵지 않습니다.",
+    s1_h: "1단계 — 서버 컴퓨터 준비",
+    s1_b: "항상 켜둘 컴퓨터 1대를 준비합니다(클라우드 서버 또는 회사 PC). 거기에 ‘Docker’라는 프로그램을 설치하세요(docker.com에서 ‘Docker Desktop’ 다운로드 → 설치). 인터넷으로 접속하려면 도메인 주소와 80·443 포트 개방이 필요합니다.",
+    s2_h: "2단계 — 서버 켜기",
+    s2_b: "서버 컴퓨터에서 터미널(명령창)을 열고 아래 3줄을 복사해 붙여넣으세요. 비밀번호는 자동으로 안전하게 만들어집니다.",
+    s2_b2: "끝나면 화면에 아이디(admin)·비밀번호·접속주소·‘에이전트 PSK’가 출력됩니다. 이 4가지를 꼭 메모하세요. (인터넷 공개 서버는 localhost 대신 본인 도메인을 넣으세요.)",
+    s3_h: "3단계 — 로그인",
+    s3_b: "웹브라우저를 열고 2단계에서 받은 접속주소(예: http://localhost:8080)로 들어가, 아이디 admin과 비밀번호로 로그인합니다.",
+    s3_ok: "✅ 대시보드(현황판)가 보이면 서버 설치 성공입니다. 처음 로그인 후 비밀번호를 바꾸세요(Users 메뉴).",
+    s4_h: "4단계 — 감시할 PC에 프로그램 설치",
+    s4_b: "감시할 Windows PC에 ‘docvault-clip.exe’ 파일과 ‘install-agent.ps1’ 파일을 복사한 뒤, PowerShell을 ‘관리자 권한으로 실행’하고 아래를 붙여넣으세요. (YOUR-SERVER는 접속주소, PASTE-THE-PSK-HERE는 2단계에서 받은 PSK로 바꾸세요.)",
+    s4_note: "⚠️ 직원 동의가 필요합니다. 회사가 소유·관리하는 업무용 PC에서, 동의를 받고 설치하세요. 몰래 감시하는 용도가 아닙니다.",
+    s5_h: "5단계 — 동작 확인",
+    s5_b: "그 PC에서 아무 파일이나 복사(Ctrl+C)해 보세요. 잠시 뒤 서버 대시보드의 ‘Endpoint Events’ 메뉴에 방금 활동이 기록되면 성공입니다.",
+    s5_ok: "✅ 여기까지 보이면 끝! 이제 그 PC의 문서 활동이 실시간으로 기록됩니다.",
+    faq_h: "자주 묻는 질문",
+    q1: "Q. 컴퓨터를 잘 몰라도 되나요?",
+    a1: "복사·붙여넣기만 할 줄 알면 됩니다. 다만 2단계(서버)는 Docker 설치가 필요해서, 어려우면 IT 담당자에게 ‘이 페이지대로 한 번만’ 부탁하세요.",
+    q2: "Q. 직원 몰래 감시해도 되나요?",
+    a2: "안 됩니다. DocVault는 회사 소유 PC에서 직원 동의 하에 쓰는 내부 보안 도구입니다. 개인 PC를 몰래 감시하는 용도가 아닙니다.",
+    q3: "Q. 윈도우에서 잘 되나요?",
+    a3: "프로그램은 윈도우용으로 만들어졌고 통신 규약은 검증됐습니다. 다만 실제 윈도우 PC에서의 최종 동작(클립보드 감지·서비스 등록)은 처음 설치 시 한 번 확인해 보는 것이 좋습니다.",
+    q4: "Q. 파일 내용까지 다 보나요?",
+    a4: "아니요. ‘누가·언제·어떤 파일을·어디로’ 같은 활동 기록과 메타데이터를 남깁니다. 파일 원본 내용을 빼가는 도구가 아닙니다.",
+    foot: "DocVault · 소규모 팀용 내부자 위협 기록·조회 도구 · 합법적 사용(직원 동의·회사 자산) 전제"
+  },
+  en: {
+    hero_title: "DocVault Setup Guide — just follow along",
+    hero_sub: "A tool that records whether company files are leaving through messengers, USB drives, or email. Even if you're not technical, just copy and paste in this order.",
+    what_h: "What is DocVault?",
+    what_body: "It keeps a record when important company files (drawings, quotes, contracts) leave an employee PC via KakaoTalk, USB, email, or the cloud — and shows suspicious activity in one dashboard.",
+    what_analogy: "📹 In plain words — it's a <b>‘CCTV for your company documents’</b>. Just as a door camera records who comes and goes, DocVault records who sent which file where. (For company-owned PCs, with employee consent.)",
+    detect_h: "What does it catch?",
+    detect_body: "It automatically logs the kinds of ‘possible leak’ actions below, and raises an alert when something looks risky.",
+    d1_t: "Messenger send", d1_b: "Work files sent via KakaoTalk/Telegram/Slack",
+    d2_t: "Email attach", d2_b: "Drawings/docs attached to outbound mail",
+    d3_t: "USB copy", d3_b: "Files copied to a removable USB drive",
+    d4_t: "Cloud upload", d4_b: "Likely upload to Google Drive, etc.",
+    d5_t: "Screen capture", d5_b: "Screenshot/capture tools launched",
+    d6_t: "Extension disguise", d6_b: "A drawing renamed to look like a photo (.jpg)",
+    how_h: "How is it set up?",
+    how_body: "You only need two things.",
+    how1_t: "① One server", how1_b: "The ‘HQ’ that collects and shows the records. One cloud or office PC is enough.",
+    how2_t: "② A small program", how2_b: "A lightweight agent installed on the PCs you monitor. It runs quietly in the background.",
+    tut_h: "Step-by-step setup",
+    tut_pill: "~20 min",
+    tut_intro: "Copy the lines below into the black window (terminal/command prompt) exactly, and press Enter. It's not hard.",
+    s1_h: "Step 1 — Prepare the server computer",
+    s1_b: "Pick one always-on computer (a cloud server or an office PC). Install ‘Docker’ on it (download ‘Docker Desktop’ from docker.com → install). For internet access you also need a domain name and ports 80 & 443 open.",
+    s2_h: "Step 2 — Start the server",
+    s2_b: "On the server computer, open a terminal and paste these 3 lines. Strong passwords are generated for you automatically.",
+    s2_b2: "When it finishes, the screen prints the username (admin), password, address, and an ‘agent PSK’. Write down all four. (For a public server, use your domain instead of localhost.)",
+    s3_h: "Step 3 — Log in",
+    s3_b: "Open a web browser, go to the address from Step 2 (e.g. http://localhost:8080), and log in with username admin and the password.",
+    s3_ok: "✅ If you see the dashboard, the server is working. Change the password right after the first login (Users menu).",
+    s4_h: "Step 4 — Install the program on a PC to monitor",
+    s4_b: "Copy ‘docvault-clip.exe’ and ‘install-agent.ps1’ onto the Windows PC, open PowerShell ‘as Administrator’, and paste the line below. (Replace YOUR-SERVER with the address, and PASTE-THE-PSK-HERE with the PSK from Step 2.)",
+    s4_note: "⚠️ Employee consent is required. Install only on company-owned work PCs, with consent. This is not for covert surveillance.",
+    s5_h: "Step 5 — Verify it works",
+    s5_b: "On that PC, copy any file (Ctrl+C). After a moment, if the activity shows up under ‘Endpoint Events’ in the server dashboard, it works.",
+    s5_ok: "✅ If you got here, you're done — that PC's document activity is now logged in real time.",
+    faq_h: "FAQ",
+    q1: "Q. Do I need to be technical?",
+    a1: "If you can copy and paste, you can do it. Step 2 (server) needs Docker, so if it's hard, ask your IT person to do it once, following this page.",
+    q2: "Q. Can I monitor employees secretly?",
+    a2: "No. DocVault is an internal security tool for company-owned PCs used with employee consent. It is not for covertly monitoring personal PCs.",
+    q3: "Q. Does it work on Windows?",
+    a3: "The program is built for Windows and its protocol is verified. The final on-device behavior (clipboard detection, service install) is best confirmed once during the first install.",
+    q4: "Q. Does it read the file contents?",
+    a4: "No. It records activity and metadata — who, when, which file, where. It does not exfiltrate the file's actual contents.",
+    foot: "DocVault · insider-threat logging & review tool for small teams · for lawful use (employee consent, company assets)"
+  }
+};
+function setLang(l){
+  document.querySelectorAll('[data-i18n]').forEach(function(e){ e.innerHTML = I18N[l][e.dataset.i18n] || ''; });
+  document.documentElement.lang = l;
+  document.getElementById('b-ko').classList.toggle('active', l==='ko');
+  document.getElementById('b-en').classList.toggle('active', l==='en');
+  try{ localStorage.setItem('dvlang', l); }catch(_){}
+}
+function cp(btn){
+  var t = btn.parentNode.innerText.replace(/^copy/, '').trim();
+  navigator.clipboard && navigator.clipboard.writeText(t);
+  var o = btn.textContent; btn.textContent='✓'; setTimeout(function(){btn.textContent=o;}, 1200);
+}
+setLang((function(){ try{ return localStorage.getItem('dvlang') || 'ko'; }catch(_){ return 'ko'; } })());
+</script>
+</body>
+</html>
