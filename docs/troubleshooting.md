@@ -81,6 +81,32 @@ POST /api/auth/login validated the password and immediately returned full access
 - **Commit**: 5e6b325
 - **Pattern**: Parallel API and web auth paths must share the same factors and throttling. Verify the alternate endpoint, not just the UI flow.
 
+## osquery agent could not talk to the server (enroll/auth protocol mismatch)
+
+- **Symptom**:
+
+```text
+deploy/osquery/osquery.flags + osquery.conf use the standard osquery TLS plugin (enroll_secret -> node_key), but the server's /api/enroll returned {hostname, username} with no node_key, and /api/events/osquery authenticated via the X-Osquery-PSK header — which osquery does not send. A stock osquery node would fail to enroll and its config/log requests would be rejected.
+```
+
+- **Cause**: Verified in the code before commit `7726828`: `Enroll` in `internal/endpoint/handler.go` issued no `node_key`; `ReceiveOsquery` gated on the `X-Osquery-PSK` header. osquery instead exchanges a shared `enroll_secret` for a `node_key` it carries on every subsequent config/log request.
+- **Fix**: Commit `7726828`. Implemented the real osquery TLS protocol in `internal/endpoint/osquery_tls.go`: `/api/osquery/enroll` validates the enroll secret (the shared `DOCVAULT_OSQUERY_PSK`, constant-time) and issues a `node_key` stored on `endpoint_agents` (migration `014`); `/api/osquery/config` and `/api/osquery/log` authenticate by `node_key`. Extracted `processOsqueryBatch` from `ReceiveOsquery` so the TLS logger path reuses the existing normalize/store/alert pipeline. Pointed `osquery.flags`/`osquery.conf` at `/api/osquery/enroll|config|log`. NOTE: not yet verified against a live osquery daemon.
+- **Commit**: 7726828
+- **Pattern**: When integrating a third-party agent, implement its actual wire protocol — a custom header scheme silently breaks the stock client.
+
+## Clipboard agent dropped events on any network blip
+
+- **Symptom**:
+
+```text
+cmd/clipagent/agent.go sent each event with `go sendEvent(...)` fire-and-forget; on any send error it logged and discarded the event. Enrollment happened once at startup, so a server restart or IP change silently stopped attribution.
+```
+
+- **Cause**: No retry, no queue, no re-enroll. For a remote-over-internet agent, transient outages are normal and meant permanent data loss exactly during the moments that matter.
+- **Fix**: Commit `7726828`. Rewrote the agent around a bounded in-memory queue drained by a sender goroutine with exponential backoff (4 attempts), periodic re-enroll every 5 minutes, and a best-effort flush on shutdown. Verified cross-builds for `windows/amd64` and `darwin/arm64`.
+- **Commit**: 7726828
+- **Pattern**: A monitoring agent over an unreliable link needs at least a bounded retry queue; fire-and-forget loses the very events an incident depends on.
+
 ## No one-command deploy; example secrets accepted; server started against empty schema
 
 - **Symptom**:
@@ -93,3 +119,4 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Fix**: Commit `5e6b325`. `docker-compose.prod.yml` orchestrates `db → migrate → seed → server → caddy` (migrations auto-apply from the embedded FS). `config.Load` rejects known example/weak secrets and enforces JWT/PSK minimum length. `scripts/gen-env.sh` generates strong secrets into a `chmod 600 .env`; `.env.prod.example` documents the dedicated-server and friend's-PC all-in-one scenarios. `deploy/caddy/Caddyfile` provides automatic HTTPS. `seed.go` uses `DOCVAULT_ADMIN_PASSWORD` or a random password and never logs it. `Dockerfile` → `golang:1.26-alpine`. NOTE: `docker compose build/up` was not run in this environment — Go build/vet/test verified only; container build to be confirmed on the server.
 - **Commit**: 5e6b325
 - **Pattern**: Bundle migrations into the deploy orchestration and refuse example secrets at startup, so a known-key deploy fails fast instead of silently running insecure.
+<!-- skipped: 4b1098a Log API 2FA enforcement and production deploy stack [no-log] -->

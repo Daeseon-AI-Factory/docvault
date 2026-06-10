@@ -1,0 +1,44 @@
+---
+title: "Made the agents production-grade: osquery TLS protocol and reliable clipboard delivery"
+date: "2026-06-10"
+project: "docvault"
+kind: "tech-retro"
+visibility: "public"
+language: "en"
+summary: "To actually deploy DocVault for a remote user, I implemented the real osquery TLS wire protocol on the server (enroll_secret → node_key) so a stock osquery node can connect, and rewrote the clipboard agent around a bounded retry queue with periodic re-enrollment so events survive network outages. Plus a one-command Compose deploy and a full deployment guide."
+tags: ["osquery", "agents", "reliability", "deployment", "go", "tls", "windows"]
+---
+
+The target was concrete: get DocVault to a state where it can be installed for a friend's Windows PC reporting to a remote server, and *stay working in daily use*. Two things stood between the code and that goal.
+
+## osquery didn't actually speak to the server
+
+The repo shipped osquery configs (`osquery.flags`, `osquery.conf`) set up for the standard osquery TLS plugin — the one that exchanges a shared `enroll_secret` for a per-node `node_key` and then carries that `node_key` on every config and log request.
+
+But the server didn't implement that protocol. `/api/enroll` took `{hostname, username}` and returned no `node_key`; `/api/events/osquery` authenticated with an `X-Osquery-PSK` header that osquery never sends. So a stock osquery node would have failed to enroll, and every file/USB/process event it tried to ship would have been rejected. The whole osquery half of the product was effectively disconnected.
+
+I implemented the real protocol in a new `internal/endpoint/osquery_tls.go`:
+
+- **`/api/osquery/enroll`** validates the enroll secret (the shared `DOCVAULT_OSQUERY_PSK`, compared in constant time) and issues a random `node_key`, stored on the existing `endpoint_agents` row via migration `014`.
+- **`/api/osquery/config`** and **`/api/osquery/log`** authenticate by `node_key` and return `{node_invalid: ...}` the way osquery expects.
+- I extracted `processOsqueryBatch` from the old handler so the TLS logger path reuses the exact same normalize → store → alert/SSE/UEBA/tracking pipeline that already existed. The legacy PSK-header endpoint still works, so nothing regresses.
+
+The config files now point at `/api/osquery/enroll|config|log`. Honest caveat: I have no osquery daemon in this environment, so this is implemented to the protocol spec but **not yet verified end-to-end** — that happens on the actual PC during smoke testing.
+
+## The clipboard agent threw events away
+
+`cmd/clipagent/agent.go` did `go sendEvent(...)` — fire and forget. Any network error logged a line and dropped the event. It enrolled once at startup and never again. For an agent talking to a server across the internet, that means every transient blip silently loses data, and a server restart quietly de-attributes the host.
+
+I rewrote it around a small state machine: a bounded in-memory queue (500 events) decouples the 500ms clipboard poll from the network; a sender goroutine drains it with exponential backoff (4 attempts per event); the agent re-enrolls every 5 minutes; and on shutdown it closes the queue and flushes for a few seconds before exiting. If the queue fills during a long outage it drops the *oldest* event, so memory stays bounded. It cross-builds cleanly for `windows/amd64` (the real target) and `darwin/arm64`.
+
+## Packaging it so a human can install it
+
+The remaining gap was operational. I added:
+
+- `scripts/install-agent.ps1` — a single-PC installer that injects `DOCVAULT_SERVER_URL` and `DOCVAULT_AGENT_PSK` (the missing PSK was why agents would have hit 401) and registers the Windows service.
+- `scripts/deploy-server.sh` — one command to generate secrets and bring up the Compose stack.
+- `docs/DEPLOY.md` — a full guide covering both a dedicated public server and an all-in-one install on a single PC, with a smoke-test checklist.
+
+## Status
+
+`go build`, `go vet`, and `go test ./...` pass, and the agent cross-compiles for Windows and macOS. What's still unverified by me, and called out in the guide: Docker Compose bring-up, the Windows install script, and osquery's live handshake — none of which I can run here. And still open before this is safe on the open internet: encrypting TOTP secrets and backups at rest. Those are the next targets.
