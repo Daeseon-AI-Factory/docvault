@@ -1,7 +1,9 @@
 package web
 
 import (
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -127,12 +129,21 @@ func (rl *LoginRateLimiter) cleanup() {
 }
 
 // ExtractIP gets the client IP from a request (handles X-Forwarded-For).
+// RemoteAddr is host:port, so the port must be stripped — otherwise every
+// connection (a fresh ephemeral port) counts as a different client and the
+// per-IP login lockout never trips.
 func ExtractIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return xff
+		if i := strings.IndexByte(xff, ','); i >= 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
 	}
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+		return strings.TrimSpace(xri)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
 	}
 	return r.RemoteAddr
 }
