@@ -128,3 +128,13 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Fix**: Commit 4cc9337d417acd68cf5181aec9027e6f614b5eda. backup.sh now pipes pg_dump and the vault tar through openssl enc -aes-256-cbc -pbkdf2, keyed by a separate /opt/docvault/backup.key; it fails closed if the key is missing, documents restore and off-host copy, and uses set -euo pipefail.
 - **Commit**: 4cc9337d417acd68cf5181aec9027e6f614b5eda
 - **Pattern**: A backup that contains secrets must be encrypted at rest with a key kept off the backed-up host.
+<!-- skipped: 262d1ce Log backup encryption [no-log] -->
+<!-- skipped: 30abd7e Remove hardcoded dev secrets from compose and .env.example [no-log] -->
+
+## Login rate limit never tripped (keyed on IP:port instead of IP)
+
+- **Symptom**: After bringing the stack up with docker compose, 7 consecutive wrong logins to /api/auth/login all returned 401 — the 5-attempt lockout never fired (no 429).
+- **Cause**: web.ExtractIP returned r.RemoteAddr unchanged, which is host:port. Each connection uses a fresh ephemeral source port, so every attempt was counted as a different client and the per-IP counter never reached the threshold.
+- **Fix**: Commit 720e3c4368d14046603a70214e77a0d065168f54. ExtractIP now strips the port via net.SplitHostPort (and takes the first X-Forwarded-For hop). After rebuild, 7 wrong logins returned 401 x5 then 429 x2 as expected.
+- **Commit**: 720e3c4368d14046603a70214e77a0d065168f54
+- **Pattern**: An IP-keyed limiter must key on the IP only; RemoteAddr includes a per-connection port that silently defeats it. Verify limiters by hammering the running endpoint, not just unit tests.
