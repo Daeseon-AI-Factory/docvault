@@ -153,49 +153,63 @@ func (h *Handler) ReceiveOsquery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(batch.Results) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "received": 0})
+	count, err := h.processOsqueryBatch(r.Context(), &batch)
+	if err != nil {
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":   "ok",
+		"received": count,
+	})
+}
+
+// processOsqueryBatch normalizes, stores, and fans out a batch of osquery
+// results. Shared by the legacy PSK-header endpoint (ReceiveOsquery) and the
+// osquery TLS logger endpoint (OsqueryLog). Returns the number of stored events.
+func (h *Handler) processOsqueryBatch(ctx context.Context, batch *OsqueryBatch) (int, error) {
+	if len(batch.Results) == 0 {
+		return 0, nil
 	}
 
 	// Collect unique hostnames
 	hostSet := make(map[string]bool)
-	for _, r := range batch.Results {
-		hostSet[r.HostIdentifier] = true
+	for _, res := range batch.Results {
+		hostSet[res.HostIdentifier] = true
 	}
 	var hostnames []string
-	for h := range hostSet {
-		hostnames = append(hostnames, h)
+	for hn := range hostSet {
+		hostnames = append(hostnames, hn)
 	}
 
-	hostnameMap := h.buildHostnameMap(r.Context(), hostnames)
+	hostnameMap := h.buildHostnameMap(ctx, hostnames)
 
 	// Use DB-based disguise checker if available
 	var checker ExtensionDisguiseChecker
 	if h.monCfgRepo != nil {
-		if cfg, err := h.monCfgRepo.Get(r.Context()); err == nil {
+		if cfg, err := h.monCfgRepo.Get(ctx); err == nil {
 			checker = cfg
 		}
 	}
-	events := NormalizeOsqueryEventsWithChecker(&batch, hostnameMap, checker)
+	events := NormalizeOsqueryEventsWithChecker(batch, hostnameMap, checker)
 
-	if err := h.repo.InsertBatch(r.Context(), events); err != nil {
-		h.logger.Error("receive osquery events", "error", err, "count", len(events))
-		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
-		return
+	if err := h.repo.InsertBatch(ctx, events); err != nil {
+		h.logger.Error("process osquery events", "error", err, "count", len(events))
+		return 0, err
 	}
 
 	// Evaluate alert rules + broadcast to dashboards
 	for _, event := range events {
 		if h.alertEvaluator != nil {
-			h.alertEvaluator.Evaluate(r.Context(), event)
+			h.alertEvaluator.Evaluate(ctx, event)
 		}
 		if h.sseBroadcaster != nil {
 			h.sseBroadcaster.BroadcastEndpointEvent(string(event.EventType), event.Hostname, event.FileName, event.ProcessName)
 		}
 		if h.behaviorAnalyzer != nil && event.UserID != nil {
-			h.behaviorAnalyzer.AnalyzeEvent(r.Context(), BehaviorEventContext{
+			h.behaviorAnalyzer.AnalyzeEvent(ctx, BehaviorEventContext{
 				UserID: *event.UserID, EventType: string(event.EventType),
 				FileName: event.FileName, FilePath: event.FilePath,
 				ProcessName: event.ProcessName, Hostname: event.Hostname,
@@ -205,24 +219,20 @@ func (h *Handler) ReceiveOsquery(w http.ResponseWriter, r *http.Request) {
 		// Hash-based file tracking
 		if h.fileTracker != nil && event.Detail != nil {
 			var detail map[string]string
-			json.Unmarshal(event.Detail, &detail)
-			sha256 := detail["sha256"]
-			md5 := detail["md5"]
-			if sha256 != "" || md5 != "" {
-				h.fileTracker.CheckEvent(r.Context(), sha256, md5,
-					event.Hostname, event.FilePath, event.FileName,
-					string(event.EventType), event.ProcessName, event.UserID)
+			if err := json.Unmarshal(event.Detail, &detail); err == nil {
+				sha256 := detail["sha256"]
+				md5 := detail["md5"]
+				if sha256 != "" || md5 != "" {
+					h.fileTracker.CheckEvent(ctx, sha256, md5,
+						event.Hostname, event.FilePath, event.FileName,
+						string(event.EventType), event.ProcessName, event.UserID)
+				}
 			}
 		}
 	}
 
-	h.logger.Info("received osquery events", "count", len(events), "host", batch.Results[0].HostIdentifier)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":   "ok",
-		"received": len(events),
-	})
+	h.logger.Info("processed osquery events", "count", len(events))
+	return len(events), nil
 }
 
 // ReceiveClipboard handles POST /api/events/clipboard

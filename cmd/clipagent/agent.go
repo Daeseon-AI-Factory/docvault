@@ -8,7 +8,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
+	"syscall"
 	"time"
+)
+
+const (
+	pollInterval    = 500 * time.Millisecond // clipboard poll cadence
+	enrollInterval  = 5 * time.Minute        // periodic re-enroll (covers server restarts / IP changes)
+	eventQueueSize  = 500                     // bounded in-memory buffer when the server is unreachable
+	maxSendAttempts = 4                       // attempts per event before giving up
+	initialBackoff  = 1 * time.Second         // first retry delay; doubles each attempt
+	flushTimeout    = 5 * time.Second         // how long to drain the queue on shutdown
 )
 
 // ClipboardEvent is the payload sent to the server.
@@ -49,24 +60,58 @@ func runMonitor() {
 
 	log.Printf("DocVault clipboard agent starting on %s (user: %s)", hostname, username)
 	log.Printf("Reporting to %s", serverURL)
+	if psk == "" {
+		log.Println("WARNING: DOCVAULT_AGENT_PSK is not set — the server will reject events if it requires a PSK")
+	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	enrollAgent(client, serverURL, psk, hostname, username)
 
-	monitor := newClipboardMonitor()
+	// Bounded queue decouples polling from the network. If the server is briefly
+	// unreachable, events buffer here and the sender retries them with backoff.
+	queue := make(chan *ClipboardEvent, eventQueueSize)
+	var wg sync.WaitGroup
 
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
+	// Sender goroutine: drains the queue, retrying each event.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for event := range queue {
+			sendEventWithRetry(client, serverURL, psk, event)
+		}
+	}()
+
+	// Enroll now, then periodically — re-enrollment survives server restarts and
+	// host/IP changes without manual intervention.
+	enrollAgent(client, serverURL, psk, hostname, username)
+	enrollTicker := time.NewTicker(enrollInterval)
+	defer enrollTicker.Stop()
+
+	monitor := newClipboardMonitor()
+	pollTicker := time.NewTicker(pollInterval)
+	defer pollTicker.Stop()
 
 	for {
 		select {
 		case <-quit:
-			log.Println("shutting down clipboard agent")
+			log.Println("shutting down clipboard agent — flushing queued events")
+			close(queue)
+			done := make(chan struct{})
+			go func() { wg.Wait(); close(done) }()
+			select {
+			case <-done:
+				log.Println("all queued events flushed")
+			case <-time.After(flushTimeout):
+				log.Println("flush timeout — some events may be unsent")
+			}
 			return
-		case <-ticker.C:
+
+		case <-enrollTicker.C:
+			enrollAgent(client, serverURL, psk, hostname, username)
+
+		case <-pollTicker.C:
 			snap := monitor.Poll()
 			if snap == nil {
 				continue
@@ -83,9 +128,29 @@ func runMonitor() {
 				Timestamp:   time.Now().UTC().Format(time.RFC3339),
 			}
 
-			go sendEvent(client, serverURL, psk, event)
+			enqueue(queue, event)
 		}
 	}
+}
+
+// enqueue adds an event without blocking the poll loop. If the queue is full
+// (server down for a while), it drops the oldest event to bound memory.
+func enqueue(queue chan *ClipboardEvent, event *ClipboardEvent) {
+	select {
+	case queue <- event:
+		return
+	default:
+	}
+	// Full: drop oldest, then enqueue the new one.
+	select {
+	case <-queue:
+	default:
+	}
+	select {
+	case queue <- event:
+	default:
+	}
+	log.Println("event queue full — dropped the oldest event")
 }
 
 func enrollAgent(client *http.Client, serverURL, psk, hostname, username string) {
@@ -113,23 +178,37 @@ func enrollAgent(client *http.Client, serverURL, psk, hostname, username string)
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
-		log.Println("enrolled successfully with server")
+		log.Println("enrolled with server")
 	} else {
 		log.Printf("enrollment returned status %d", resp.StatusCode)
 	}
 }
 
-func sendEvent(client *http.Client, serverURL, psk string, event *ClipboardEvent) {
+// sendEventWithRetry attempts delivery up to maxSendAttempts times with
+// exponential backoff before giving up on a single event.
+func sendEventWithRetry(client *http.Client, serverURL, psk string, event *ClipboardEvent) {
+	backoff := initialBackoff
+	for attempt := 1; attempt <= maxSendAttempts; attempt++ {
+		if err := sendEvent(client, serverURL, psk, event); err == nil {
+			return
+		} else if attempt == maxSendAttempts {
+			log.Printf("dropping event after %d attempts: %v", maxSendAttempts, err)
+			return
+		}
+		time.Sleep(backoff)
+		backoff *= 2
+	}
+}
+
+func sendEvent(client *http.Client, serverURL, psk string, event *ClipboardEvent) error {
 	body, err := json.Marshal(event)
 	if err != nil {
-		log.Printf("marshal error: %v", err)
-		return
+		return fmt.Errorf("marshal event: %w", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/events/clipboard", bytes.NewReader(body))
 	if err != nil {
-		log.Printf("request error: %v", err)
-		return
+		return fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if psk != "" {
@@ -138,15 +217,12 @@ func sendEvent(client *http.Client, serverURL, psk string, event *ClipboardEvent
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("send error: %v", err)
-		return
+		return fmt.Errorf("send: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("server returned %d", resp.StatusCode)
-		return
+		return fmt.Errorf("server returned %d", resp.StatusCode)
 	}
-
-	fmt.Printf(".")
+	return nil
 }

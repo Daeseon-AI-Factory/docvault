@@ -81,6 +81,11 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Post("/api/enroll", deps.EndpointHandler.Enroll)
 	r.Post("/api/config", deps.EndpointHandler.AgentConfig)
 
+	// osquery TLS agent protocol (enroll-secret -> node_key, then node_key auth)
+	r.Post("/api/osquery/enroll", deps.EndpointHandler.OsqueryEnroll)
+	r.Post("/api/osquery/config", deps.EndpointHandler.OsqueryConfig)
+	r.Post("/api/osquery/log", deps.EndpointHandler.OsqueryLog)
+
 	// Protected API routes
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Middleware(deps.JWTSvc))

@@ -1,10 +1,11 @@
 --tls_hostname=docvault.company.local
 --tls_server_certs=C:\ProgramData\osquery\certs\docvault-ca.pem
 --enroll_secret_path=C:\ProgramData\osquery\enroll_secret
+--enroll_tls_endpoint=/api/osquery/enroll
 --config_plugin=tls
---config_tls_endpoint=/api/config
+--config_tls_endpoint=/api/osquery/config
 --logger_plugin=tls
---logger_tls_endpoint=/api/events/osquery
+--logger_tls_endpoint=/api/osquery/log
 --logger_tls_period=60
 --host_identifier=hostname
 --enable_file_events=true

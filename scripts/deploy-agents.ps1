@@ -4,6 +4,7 @@
 
 param(
     [string]$ServerURL = "http://docvault:8080",
+    [Parameter(Mandatory = $true)][string]$AgentPSK,   # DOCVAULT_OSQUERY_PSK from the server's .env
     [string]$AgentPath = ".\docvault-clip.exe",
     [string]$PCListFile = ".\pc-list.txt",     # One hostname per line
     [string]$InstallDir = "C:\Program Files\DocVault"
@@ -50,10 +51,11 @@ foreach ($pc in $PCs) {
 
         # Install and start service remotely
         Invoke-Command -ComputerName $pc -ScriptBlock {
-            param($serverURL, $installDir)
+            param($serverURL, $agentPSK, $installDir)
 
             # Set environment variables (machine-level)
             [Environment]::SetEnvironmentVariable("DOCVAULT_SERVER_URL", $serverURL, "Machine")
+            [Environment]::SetEnvironmentVariable("DOCVAULT_AGENT_PSK", $agentPSK, "Machine")
 
             # Install service
             & "$installDir\docvault-clip.exe" install 2>&1 | Out-Null
@@ -68,7 +70,7 @@ foreach ($pc in $PCs) {
             } else {
                 return "FAILED"
             }
-        } -ArgumentList $ServerURL, $InstallDir
+        } -ArgumentList $ServerURL, $AgentPSK, $InstallDir
 
         Write-Host "OK" -ForegroundColor Green
         $success++
