@@ -138,3 +138,12 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Fix**: Commit 720e3c4368d14046603a70214e77a0d065168f54. ExtractIP now strips the port via net.SplitHostPort (and takes the first X-Forwarded-For hop). After rebuild, 7 wrong logins returned 401 x5 then 429 x2 as expected.
 - **Commit**: 720e3c4368d14046603a70214e77a0d065168f54
 - **Pattern**: An IP-keyed limiter must key on the IP only; RemoteAddr includes a per-connection port that silently defeats it. Verify limiters by hammering the running endpoint, not just unit tests.
+<!-- skipped: e8334f9 Log rate-limit IP-key fix [no-log] -->
+
+## No automated Windows verification for the agent
+
+- **Symptom**: clipagent targets Windows but CI built only on ubuntu; Windows build and service registration were never verified automatically.
+- **Cause**: .github/workflows/ci.yml had a single ubuntu job, pinned to Go 1.22 (go.mod wants 1.26).
+- **Fix**: Commit 308a01e3dcbd89f0c0bc3ca195ac48aee0856be8. Added a windows-latest CI job (build server+agent, vet, unit tests, and a service install/uninstall smoke via docvault-clip.exe). Bumped CI Go to 1.26. Added docs/WINDOWS_VM_TEST.md for manual clipboard verification in a UTM Windows-ARM VM, and landing/guide.html (bilingual KO/EN setup tutorial).
+- **Commit**: 308a01e3dcbd89f0c0bc3ca195ac48aee0856be8
+- **Pattern**: cross-platform agents need a CI job per target OS; GUI-only behavior (clipboard) still needs a VM or real device.
