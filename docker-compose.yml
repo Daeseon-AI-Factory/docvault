@@ -1,32 +1,67 @@
+# DocVault local/dev stack (no Caddy, server exposed directly on :8080).
+# For internet/production use docker-compose.prod.yml (adds Caddy auto-HTTPS).
+#
+# Generate secrets first:  bash scripts/gen-env.sh localhost
+# Then:                    docker compose up -d --build
+# Migrations and the admin seed run automatically. Open http://localhost:8080
+#
+# No secrets are hardcoded here — everything comes from .env.
+
+name: docvault-dev
+
+x-app-env: &app-env
+  DOCVAULT_DB_URL: postgres://docvault_app:${DOCVAULT_DB_PASSWORD:?run scripts/gen-env.sh first}@db:5432/docvault?sslmode=disable
+  DOCVAULT_MASTER_KEY: ${DOCVAULT_MASTER_KEY:?run scripts/gen-env.sh first}
+  DOCVAULT_JWT_SECRET: ${DOCVAULT_JWT_SECRET:?run scripts/gen-env.sh first}
+  DOCVAULT_OSQUERY_PSK: ${DOCVAULT_OSQUERY_PSK:?run scripts/gen-env.sh first}
+  DOCVAULT_VAULT_PATH: /vault
+  DOCVAULT_LISTEN_ADDR: ":8080"
+
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: docvault
       POSTGRES_USER: docvault_app
-      POSTGRES_PASSWORD: docvault_pass_2024
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${DOCVAULT_DB_PASSWORD:?run scripts/gen-env.sh first}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U docvault_app -d docvault"]
       interval: 3s
       timeout: 3s
-      retries: 10
+      retries: 20
 
-  server:
+  migrate:
     build: .
+    command: ["migrate"]
     depends_on:
       db:
         condition: service_healthy
+    environment: *app-env
+    restart: "no"
+
+  seed:
+    build: .
+    command: ["seed"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     environment:
-      DOCVAULT_DB_URL: "postgres://docvault_app:docvault_pass_2024@db:5432/docvault?sslmode=disable"
-      DOCVAULT_MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-      DOCVAULT_JWT_SECRET: "docvault-jwt-dev-secret-2024"
-      DOCVAULT_VAULT_PATH: "/vault"
-      DOCVAULT_LISTEN_ADDR: ":8080"
-      DOCVAULT_OSQUERY_PSK: "dev-psk-for-testing"
+      <<: *app-env
+      DOCVAULT_ADMIN_PASSWORD: ${DOCVAULT_ADMIN_PASSWORD:-}
+    restart: "no"
+
+  server:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *app-env
     ports:
       - "8080:8080"
     volumes:
