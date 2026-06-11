@@ -108,6 +108,16 @@
       border-color: var(--accent);
       text-decoration: none;
     }
+    .links a.primary {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    .links a.primary:hover {
+      opacity: 0.9;
+      border-color: var(--accent);
+    }
     .meta {
       margin-top: 4rem;
       padding-top: 1.5rem;
@@ -142,6 +152,7 @@
     개인 포트폴리오 프로젝트입니다.
   </p>
   <div class="links">
+    <a href="guide.html" class="primary">📘 설치 가이드 (한 / EN)</a>
     <a href="https://github.com/JasonAIFactory/Product024_JasonDRM">GitHub</a>
     <a href="https://github.com/JasonAIFactory/Product024_JasonDRM/blob/main/docs/ARCHITECTURE.md">Architecture</a>
     <a href="https://github.com/JasonAIFactory/Product024_JasonDRM/blob/main/docs/DECISIONS.md">Decisions</a>
@@ -186,6 +197,11 @@
 </table>
 
 <h2>실행</h2>
+<p>
+  컴퓨터를 잘 몰라도 복사·붙여넣기로 따라할 수 있는
+  <a href="guide.html"><strong>설치 가이드 (한국어 / English)</strong></a>를 준비했습니다.
+  아래는 개발자용 요약입니다.
+</p>
 <pre><code>make build
 createdb docvault
 ./bin/docvault migrate
