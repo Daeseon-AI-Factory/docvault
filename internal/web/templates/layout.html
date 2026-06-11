@@ -27,6 +27,9 @@
         <li><a href="/admin/agents" {{if eq .Active "admin-agents"}}class="active"{{end}}>Agent Status</a></li>
         <li><a href="/admin/monitoring" {{if eq .Active "admin-monitoring"}}class="active"{{end}}>Monitoring Config</a></li>
         {{end}}
+
+        <li class="sidebar-section">Help</li>
+        <li><a href="/static/guide.html" target="_blank">📘 Setup Guide</a></li>
       </ul>
       <div class="sidebar-user">
         Signed in as <strong>{{.Username}}</strong>
