@@ -16,6 +16,7 @@ import (
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/auth"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/endpoint"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/folder"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/insight"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/vault"
@@ -35,6 +36,7 @@ type RouterDeps struct {
 	PageHandler     *PageHandler
 	FormHandler     *FormHandler
 	SSEHub          *SSEHub
+	InsightHandler  *insight.Handler
 	Logger          *slog.Logger
 }
 
@@ -147,6 +149,11 @@ func NewRouter(deps RouterDeps) http.Handler {
 		// SSE: real-time event stream for dashboards
 		if deps.SSEHub != nil {
 			r.Get("/api/events/stream", deps.SSEHub.ServeHTTP)
+		}
+
+		// AI insight summary (admin-only — triggers a paid Claude API call)
+		if deps.InsightHandler != nil {
+			r.With(auth.RequireRole("admin")).Get("/api/insight/summary", deps.InsightHandler.Summary)
 		}
 
 		// Alert routes

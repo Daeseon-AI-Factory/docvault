@@ -14,6 +14,10 @@ type Config struct {
 	OsqueryPSK   string
 	SlackWebhook string
 	AlertEmail   string
+
+	// Optional: enables the AI summary bot (Claude Messages API). Disabled if empty.
+	AnthropicAPIKey string
+	AIModel         string
 }
 
 func Load() (*Config, error) {
@@ -26,6 +30,9 @@ func Load() (*Config, error) {
 		OsqueryPSK:   os.Getenv("DOCVAULT_OSQUERY_PSK"),
 		SlackWebhook: os.Getenv("DOCVAULT_SLACK_WEBHOOK"),
 		AlertEmail:   os.Getenv("DOCVAULT_ALERT_EMAIL"),
+
+		AnthropicAPIKey: os.Getenv("DOCVAULT_ANTHROPIC_API_KEY"),
+		AIModel:         os.Getenv("DOCVAULT_AI_MODEL"),
 	}
 
 	if cfg.DBUrl == "" {

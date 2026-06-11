@@ -17,6 +17,7 @@ import (
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/database"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/endpoint"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/folder"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/insight"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/tracking"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/ueba"
@@ -251,6 +252,13 @@ func run(logger *slog.Logger) error {
 	endpointHandler.SetFileTracker(fileTracker)
 	trackerBridge := &trackerBridge{tracker: fileTracker}
 
+	// AI summary bot (optional — disabled unless DOCVAULT_ANTHROPIC_API_KEY is set)
+	summarizer := insight.NewSummarizer(pool, cfg.AnthropicAPIKey, cfg.AIModel, logger)
+	insightHandler := insight.NewHandler(summarizer, logger)
+	if summarizer.Enabled() {
+		logger.Info("AI summary enabled", "model", cfg.AIModel)
+	}
+
 	// Page handler (HTML templates)
 	pageHandler, err := web.NewPageHandler(web.PageHandlerDeps{
 		DB:             pool,
@@ -295,6 +303,7 @@ func run(logger *slog.Logger) error {
 		PageHandler:     pageHandler,
 		FormHandler:     formHandler,
 		SSEHub:          sseHub,
+		InsightHandler:  insightHandler,
 		Logger:          logger,
 	})
 
