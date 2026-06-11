@@ -155,3 +155,14 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Fix**: Commit 39b6cfdf3288e417849e4cc99dec355cbf268b04. Added clipboard_other.go and service_other.go (build tag !windows && !darwin) with a no-op clipboard monitor. Verified GOOS=linux/windows/darwin go build ./cmd/clipagent and GOOS=linux go build ./...
 - **Commit**: 39b6cfdf3288e417849e4cc99dec355cbf268b04
 - **Pattern**: platform _windows/_darwin files need a fallback for every OS CI builds on, or go build ./... breaks there. Watch CI status, not just local builds.
+<!-- skipped: db94515 Log clipagent Linux build fix [no-log] -->
+<!-- skipped: d7b71d1 Link the bilingual setup guide from the landing page [no-log] -->
+<!-- skipped: a29a69a Add in-app sidebar link to the bilingual setup guide [no-log] -->
+
+## Added an optional AI summary layer on top of the rule engine
+
+- **Symptom**: the alert engine flags individual events but there was no natural-language "what happened" summary for an admin.
+- **Cause**: feature gap — rule-based alerts only (by design), no aggregated briefing.
+- **Fix**: Commit 0cf0a5037ad91f60bc8a9c175419448a54311603. internal/insight builds a compact DB digest (event counts, recent notable events, unacked alerts) and calls the Anthropic Messages API via raw net/http to produce a short Korean briefing. Admin-only GET /api/insight/summary, disabled unless DOCVAULT_ANTHROPIC_API_KEY is set; model via DOCVAULT_AI_MODEL.
+- **Commit**: 0cf0a5037ad91f60bc8a9c175419448a54311603
+- **Pattern**: keep paid AI calls optional + admin-gated, and send a pre-aggregated digest rather than raw rows to bound token cost.
