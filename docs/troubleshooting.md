@@ -166,3 +166,26 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Fix**: Commit 0cf0a5037ad91f60bc8a9c175419448a54311603. internal/insight builds a compact DB digest (event counts, recent notable events, unacked alerts) and calls the Anthropic Messages API via raw net/http to produce a short Korean briefing. Admin-only GET /api/insight/summary, disabled unless DOCVAULT_ANTHROPIC_API_KEY is set; model via DOCVAULT_AI_MODEL.
 - **Commit**: 0cf0a5037ad91f60bc8a9c175419448a54311603
 - **Pattern**: keep paid AI calls optional + admin-gated, and send a pre-aggregated digest rather than raw rows to bound token cost.
+<!-- skipped: f65c361 Log AI summary bot [no-log] -->
+
+## AI bot/agent on Gemini: retired model + thinking-token leak
+
+- **Symptom**: `GET /api/insight/summary` returned 502; container log: `gemini 404: This model models/gemini-2.0-flash is no longer available`. After changing the model the summary text was the model's reasoning scratchpad, truncated (e.g. `". Let's do "위험 수준: 보통"...`).
+- **Cause**: (1) `gemini-2.0-flash` was retired by Google. (2) `gemini-flash-latest` is a thinking model; default thinking consumed the 1024 `maxOutputTokens`, so only the scratchpad came back.
+- **Fix**: Commit cb2e545b4ec0fa89a61a7be5fa51bd169ca20e5a. Default Gemini model = `gemini-flash-latest` (alias auto-tracks the current flash, won't get retired); set `generationConfig.thinkingConfig.thinkingBudget=0` to disable thinking. Verified: real Korean briefing grounded in 354 events.
+- **Commit**: cb2e545b4ec0fa89a61a7be5fa51bd169ca20e5a
+- **Pattern**: pin Gemini to the `*-latest` alias, and set `thinkingBudget=0` for brief/JSON tasks or the answer gets eaten by thinking tokens.
+
+## Root disk hit 100% (build failed) — BuildKit cache on the boot volume
+
+- **Symptom**: `docker build` failed with `no space left on device` (`mkdir /tmp/go-build...`); `df /` showed the 9.8G boot disk 100% used, 0 free. SSH also started timing out.
+- **Cause**: repeated on-box docvault image builds left BuildKit cache under `/var/lib/docker/buildkit` (on the root volume) — separate from the daemon data-root (`/data/docker`, 45G free). Moving data-root does NOT move the BuildKit cache.
+- **Fix**: `docker builder prune -af` reclaimed ~1.2GB → root back to ~58%. Run a prune after each on-box build (ops action, not in a commit).
+- **Pattern**: on a small boot disk, prune builder cache after builds — or build off-box and `docker load` the image so nothing accumulates on root.
+
+## SSH locked out after ISP changed the operator's IP
+
+- **Symptom**: `ssh root@<box>` timed out repeatedly while HTTPS (443) kept working.
+- **Cause**: the ACG inbound rule for port 22 was pinned to one residential IP; the ISP reassigned it. 443 is open to 0.0.0.0/0 so the web stayed up while SSH (restricted) was dropped.
+- **Fix**: re-add the current public IP to ACG 22 via the NCP signed API before each SSH session. Verified by reconnecting.
+- **Pattern**: pinning SSH to a dynamic residential IP is fragile; use a stable jump IP / VPN, or accept re-adding the IP. A web-works-but-SSH-times-out split points at a firewall rule, not the host.
