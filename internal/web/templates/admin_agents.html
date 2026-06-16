@@ -27,6 +27,41 @@
   </div>
 </div>
 
+<div class="card mt-2">
+  <div class="card-header">🖥️ 호스트 담당자 지정 / Host → Employee</div>
+  <p class="text-muted" style="padding:.5rem 0;">
+    각 PC(호스트)를 직원에게 배정하면 그 PC의 이벤트가 해당 직원에게 귀속됩니다 (과거 이벤트도 소급 적용).<br>
+    <span style="opacity:.7">Assign each host to an employee — events (including past ones) get attributed to that person.</span>
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Hostname</th><th>Source</th><th>현재 담당자</th><th>24h</th><th>담당자 지정</th></tr></thead>
+      <tbody>
+        {{range .RegisteredAgents}}
+        <tr>
+          <td><strong>{{.Hostname}}</strong></td>
+          <td><span class="badge badge-info">{{.Source}}</span></td>
+          <td>{{if .Username}}{{.FullName}} <span class="text-muted">({{.Username}})</span>{{else}}<span style="color:#ef4444">미지정</span>{{end}}</td>
+          <td>{{.EventCount}}</td>
+          <td>
+            <form method="POST" action="/admin/agents/assign" style="display:flex;gap:6px;align-items:center;">
+              <input type="hidden" name="agent_id" value="{{.ID}}">
+              <select name="user_id" class="form-control" style="max-width:220px;">
+                <option value="0">— 미지정 —</option>
+                {{range $.AllUsers}}<option value="{{.ID}}">{{.FullName}} ({{.Username}})</option>{{end}}
+              </select>
+              <button type="submit" class="btn btn-primary">지정</button>
+            </form>
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="5" class="text-muted">등록된 에이전트 없음 — PC에 에이전트를 설치하면 자동 등록됩니다.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-header">Agent Configuration</div>
   <table>
@@ -34,5 +69,43 @@
     <tr><td class="text-muted">osquery endpoint</td><td><code>POST /api/events/osquery</code></td></tr>
     <tr><td class="text-muted">Clipboard endpoint</td><td><code>POST /api/events/clipboard</code></td></tr>
   </table>
+</div>
+
+<div class="card mt-2">
+  <div class="card-header">📥 에이전트 다운로드 &amp; 설치 / Agent Download &amp; Install</div>
+  <p class="text-muted" style="padding:0.5rem 0;">
+    아래 파일을 대상 PC에 설치하면 활동 로그가 이 서버로 전송됩니다. (회사 소유 PC + 사용자 동의 하에 사용하세요.)<br>
+    <span style="opacity:.7">Install the agent on the target PC; it then reports activity to this server. Use only on company-owned PCs with user consent.</span>
+  </p>
+
+  <p><strong>1) 다운로드 / Download</strong></p>
+  <ul>
+    <li><a href="/download/dvclip-windows-amd64.exe">🪟 Windows (64-bit) — dvclip.exe</a></li>
+    <li><a href="/download/dvclip-macos-arm64">🍎 macOS (Apple Silicon / M1·M2·M3·M4)</a></li>
+    <li><a href="/download/dvclip-macos-amd64">🍎 macOS (Intel)</a></li>
+  </ul>
+
+  <p><strong>2) Windows 설치</strong> — PowerShell을 <em>관리자 권한</em>으로 열고 붙여넣기 / <span style="opacity:.7">open PowerShell as Administrator and paste:</span></p>
+  <pre style="background:#0b1220;color:#e2e8f0;padding:.8rem;border-radius:6px;overflow:auto;font-size:.85rem;line-height:1.5;"><code>mkdir C:\DocVault -Force
+move .\dvclip-windows-amd64.exe C:\DocVault\dvclip.exe
+Unblock-File C:\DocVault\dvclip.exe
+setx /M DOCVAULT_SERVER_URL "{{.ServerURL}}"
+setx /M DOCVAULT_AGENT_PSK "{{.AgentPSK}}"
+C:\DocVault\dvclip.exe install
+net start DocVaultClipAgent</code></pre>
+  <p class="text-muted">※ SmartScreen("Windows의 PC 보호") 경고가 뜨면 <strong>"추가 정보 → 실행"</strong>을 누르세요(미서명 앱이라 정상). <span style="opacity:.7">If SmartScreen warns, click "More info → Run anyway".</span></p>
+  <p class="text-muted">제거 / Uninstall: <code>net stop DocVaultClipAgent &amp;&amp; C:\DocVault\dvclip.exe uninstall</code></p>
+
+  <p><strong>2) macOS 설치(실행)</strong> — 터미널에서 / <span style="opacity:.7">in Terminal:</span></p>
+  <pre style="background:#0b1220;color:#e2e8f0;padding:.8rem;border-radius:6px;overflow:auto;font-size:.85rem;line-height:1.5;"><code>xattr -dr com.apple.quarantine ~/Downloads/dvclip-macos-arm64
+chmod +x ~/Downloads/dvclip-macos-arm64
+DOCVAULT_SERVER_URL="{{.ServerURL}}" DOCVAULT_AGENT_PSK="{{.AgentPSK}}" ~/Downloads/dvclip-macos-arm64</code></pre>
+  <p class="text-muted">※ "Apple이 확인할 수 없음" 경고는 미서명 앱이라 정상입니다. 위 첫 줄(xattr)이 차단을 풉니다. <span style="opacity:.7">The "Apple could not verify" warning is expected (unsigned); the xattr line clears it.</span></p>
+
+  <p class="text-muted" style="margin-top:.6rem;">
+    ⚠️ 위 명령에는 <strong>인증키(PSK)</strong>가 들어 있습니다 — 설치 담당자에게만 전달하세요.<br>
+    <span style="opacity:.7">These commands include the agent PSK — share only with trusted installers.</span>
+    📘 <a href="/static/guide.html" target="_blank">자세한 설치 가이드 / Full setup guide</a>
+  </p>
 </div>
 {{end}}

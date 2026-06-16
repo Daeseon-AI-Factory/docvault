@@ -1,0 +1,384 @@
+// Package agent is an in-product AI assistant that answers questions about
+// DocVault's live data using LLM tool-use (function calling). It is
+// provider-agnostic (OpenAI or Gemini) and, for now, exposes read-only tools.
+// Mutating tools (with rollback via agent_actions) are layered on top of this
+// same loop in a later step.
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/auth"
+)
+
+const systemPrompt = `당신은 DocVault(소규모 팀용 내부자 위협 모니터링 도구)의 AI 비서입니다.
+비전문가 관리자가 활동을 이해하고 시스템을 운영하도록 돕습니다.
+반드시 제공된 도구로 실제 데이터를 조회한 뒤 답하세요 — 이벤트·사용자·숫자를 지어내지 마세요.
+조회 도구 외에 행동 도구(사용자 생성, 호스트 배정, 경보 확인)도 있습니다. 사용자가 명확히 요청할 때만 행동하고,
+무엇을 했는지(생성한 사용자명, 배정 내용 등)와 "되돌릴 수 있다"는 점을 한국어로 명확히 보고하세요.
+한국어로 간결하고 사실에 근거해 답합니다. 모르면 모른다고 하세요.`
+
+// ToolCall is a model-requested function invocation.
+type ToolCall struct {
+	ID   string         `json:"id"`
+	Name string         `json:"name"`
+	Args map[string]any `json:"args"`
+}
+
+// Msg is one entry in the conversation transcript (provider-neutral).
+type Msg struct {
+	Role       string     `json:"role"` // user | assistant | tool
+	Content    string     `json:"content,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Name       string     `json:"name,omitempty"`
+}
+
+// Tool is a function exposed to the model.
+type Tool struct {
+	Name        string
+	Description string
+	Parameters  map[string]any // JSON schema object
+	Run         func(ctx context.Context, db *pgxpool.Pool, args map[string]any) (string, error)
+}
+
+// Provider abstracts an LLM with function-calling.
+type Provider interface {
+	// Chat returns assistant text (when done) OR tool calls to execute.
+	Chat(ctx context.Context, system string, msgs []Msg, tools []Tool) (text string, calls []ToolCall, err error)
+	Name() string
+}
+
+type actorCtxKey struct{}
+
+func withActor(ctx context.Context, id int64) context.Context { return context.WithValue(ctx, actorCtxKey{}, id) }
+
+func actorFromContext(ctx context.Context) int64 {
+	if v, ok := ctx.Value(actorCtxKey{}).(int64); ok {
+		return v
+	}
+	return 0
+}
+
+// Engine runs the tool-use loop.
+type Engine struct {
+	db       *pgxpool.Pool
+	provider Provider
+	tools    []Tool
+	byName   map[string]Tool
+	logger   *slog.Logger
+}
+
+func NewEngine(db *pgxpool.Pool, provider Provider, logger *slog.Logger) *Engine {
+	tools := append(readTools(), actionTools()...)
+	byName := make(map[string]Tool, len(tools))
+	for _, t := range tools {
+		byName[t.Name] = t
+	}
+	return &Engine{db: db, provider: provider, tools: tools, byName: byName, logger: logger}
+}
+
+func (e *Engine) Enabled() bool { return e.provider != nil }
+
+// Chat runs the conversation to completion (model thinks → calls tools → answers).
+func (e *Engine) Chat(ctx context.Context, actorID int64, userMessage string, history []Msg) (string, []Msg, error) {
+	ctx = withActor(ctx, actorID)
+	msgs := append([]Msg{}, history...)
+	msgs = append(msgs, Msg{Role: "user", Content: userMessage})
+
+	for i := 0; i < 6; i++ {
+		text, calls, err := e.provider.Chat(ctx, systemPrompt, msgs, e.tools)
+		if err != nil {
+			return "", msgs, err
+		}
+		if len(calls) == 0 {
+			msgs = append(msgs, Msg{Role: "assistant", Content: text})
+			return text, msgs, nil
+		}
+		msgs = append(msgs, Msg{Role: "assistant", ToolCalls: calls, Content: text})
+		for _, c := range calls {
+			out := e.runTool(ctx, c)
+			msgs = append(msgs, Msg{Role: "tool", ToolCallID: c.ID, Name: c.Name, Content: out})
+		}
+	}
+	return "요청을 완료하지 못했습니다(도구 호출 한도 초과). 질문을 더 구체적으로 해주세요.", msgs, nil
+}
+
+func (e *Engine) runTool(ctx context.Context, c ToolCall) string {
+	t, ok := e.byName[c.Name]
+	if !ok {
+		return fmt.Sprintf(`{"error":"unknown tool %q"}`, c.Name)
+	}
+	out, err := t.Run(ctx, e.db, c.Args)
+	if err != nil {
+		e.logger.Warn("agent tool error", "tool", c.Name, "error", err)
+		return fmt.Sprintf(`{"error":%q}`, err.Error())
+	}
+	return out
+}
+
+// --- read-only tools ---
+
+func argInt(args map[string]any, key string, def int) int {
+	if v, ok := args[key]; ok {
+		switch n := v.(type) {
+		case float64:
+			return int(n)
+		case int:
+			return n
+		case string:
+			var i int
+			if _, err := fmt.Sscanf(n, "%d", &i); err == nil {
+				return i
+			}
+		}
+	}
+	return def
+}
+
+func argStr(args map[string]any, key string) string {
+	if v, ok := args[key]; ok {
+		if s, ok := v.(string); ok {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
+}
+
+func readTools() []Tool {
+	return []Tool{
+		{
+			Name:        "event_counts",
+			Description: "최근 N시간 동안의 엔드포인트 이벤트를 유형별 개수로 집계한다.",
+			Parameters: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"hours": map[string]any{"type": "integer", "description": "조회 시간(기본 24)"}},
+			},
+			Run: func(ctx context.Context, db *pgxpool.Pool, args map[string]any) (string, error) {
+				hours := argInt(args, "hours", 24)
+				rows, err := db.Query(ctx, `SELECT event_type, COUNT(*) FROM endpoint_events
+					WHERE event_time > NOW() - make_interval(hours => $1) GROUP BY event_type ORDER BY COUNT(*) DESC`, hours)
+				if err != nil {
+					return "", err
+				}
+				defer rows.Close()
+				var b strings.Builder
+				fmt.Fprintf(&b, "최근 %d시간 이벤트 집계:\n", hours)
+				n := 0
+				for rows.Next() {
+					var t string
+					var c int
+					if err := rows.Scan(&t, &c); err == nil {
+						fmt.Fprintf(&b, "- %s: %d\n", t, c)
+						n++
+					}
+				}
+				if n == 0 {
+					b.WriteString("(이벤트 없음)\n")
+				}
+				return b.String(), nil
+			},
+		},
+		{
+			Name:        "recent_events",
+			Description: "최근 이벤트 목록을 조회한다. event_type(예: clipboard_copy, usb_copy)과 hostname으로 필터 가능.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"hours":      map[string]any{"type": "integer", "description": "조회 시간(기본 24)"},
+					"event_type": map[string]any{"type": "string", "description": "이벤트 유형 필터(선택)"},
+					"hostname":   map[string]any{"type": "string", "description": "호스트명 필터(선택)"},
+					"limit":      map[string]any{"type": "integer", "description": "최대 행수(기본 20, 최대 50)"},
+				},
+			},
+			Run: func(ctx context.Context, db *pgxpool.Pool, args map[string]any) (string, error) {
+				hours := argInt(args, "hours", 24)
+				limit := argInt(args, "limit", 20)
+				if limit <= 0 || limit > 50 {
+					limit = 20
+				}
+				q := `SELECT event_time, hostname, event_type, COALESCE(file_name,''), COALESCE(process_name,'')
+				      FROM endpoint_events WHERE event_time > NOW() - make_interval(hours => $1)`
+				qa := []any{hours}
+				if et := argStr(args, "event_type"); et != "" {
+					qa = append(qa, et)
+					q += fmt.Sprintf(" AND event_type = $%d", len(qa))
+				}
+				if h := argStr(args, "hostname"); h != "" {
+					qa = append(qa, h)
+					q += fmt.Sprintf(" AND hostname = $%d", len(qa))
+				}
+				qa = append(qa, limit)
+				q += fmt.Sprintf(" ORDER BY event_time DESC LIMIT $%d", len(qa))
+				rows, err := db.Query(ctx, q, qa...)
+				if err != nil {
+					return "", err
+				}
+				defer rows.Close()
+				var b strings.Builder
+				b.WriteString("시간 | 호스트 | 유형 | 파일 | 프로세스\n")
+				n := 0
+				for rows.Next() {
+					var t time.Time
+					var host, et, fn, pn string
+					if err := rows.Scan(&t, &host, &et, &fn, &pn); err == nil {
+						fmt.Fprintf(&b, "%s | %s | %s | %s | %s\n", t.Format(time.RFC3339), host, et, fn, pn)
+						n++
+					}
+				}
+				if n == 0 {
+					b.WriteString("(해당 이벤트 없음)\n")
+				}
+				return b.String(), nil
+			},
+		},
+		{
+			Name:        "list_alerts",
+			Description: "경보(alert) 목록을 조회한다. only_unacked=true면 미확인 경보만.",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"only_unacked": map[string]any{"type": "boolean", "description": "미확인만(기본 true)"},
+					"limit":        map[string]any{"type": "integer", "description": "최대 행수(기본 20)"},
+				},
+			},
+			Run: func(ctx context.Context, db *pgxpool.Pool, args map[string]any) (string, error) {
+				limit := argInt(args, "limit", 20)
+				if limit <= 0 || limit > 50 {
+					limit = 20
+				}
+				onlyUnacked := true
+				if v, ok := args["only_unacked"].(bool); ok {
+					onlyUnacked = v
+				}
+				q := `SELECT id, severity, message, is_acknowledged, created_at FROM alerts`
+				if onlyUnacked {
+					q += ` WHERE is_acknowledged = false`
+				}
+				q += fmt.Sprintf(` ORDER BY created_at DESC LIMIT %d`, limit)
+				rows, err := db.Query(ctx, q)
+				if err != nil {
+					return "", err
+				}
+				defer rows.Close()
+				var b strings.Builder
+				b.WriteString("ID | 심각도 | 메시지 | 확인됨 | 시간\n")
+				n := 0
+				for rows.Next() {
+					var id int64
+					var sev, msg string
+					var ack bool
+					var t time.Time
+					if err := rows.Scan(&id, &sev, &msg, &ack, &t); err == nil {
+						fmt.Fprintf(&b, "%d | %s | %s | %t | %s\n", id, sev, msg, ack, t.Format(time.RFC3339))
+						n++
+					}
+				}
+				if n == 0 {
+					b.WriteString("(경보 없음)\n")
+				}
+				return b.String(), nil
+			},
+		},
+		{
+			Name:        "list_users",
+			Description: "등록된 사용자(직원) 목록을 조회한다.",
+			Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+			Run: func(ctx context.Context, db *pgxpool.Pool, args map[string]any) (string, error) {
+				rows, err := db.Query(ctx, `SELECT id, username, full_name, department, role, is_active FROM users ORDER BY username`)
+				if err != nil {
+					return "", err
+				}
+				defer rows.Close()
+				var b strings.Builder
+				b.WriteString("ID | 사용자명 | 이름 | 부서 | 역할 | 활성\n")
+				for rows.Next() {
+					var id int64
+					var un, fn, dept, role string
+					var active bool
+					if err := rows.Scan(&id, &un, &fn, &dept, &role, &active); err == nil {
+						fmt.Fprintf(&b, "%d | %s | %s | %s | %s | %t\n", id, un, fn, dept, role, active)
+					}
+				}
+				return b.String(), nil
+			},
+		},
+		{
+			Name:        "list_hosts",
+			Description: "등록된 PC(에이전트)와 담당 직원, 마지막 접속 시각을 조회한다. 미배정 PC 파악에 사용.",
+			Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+			Run: func(ctx context.Context, db *pgxpool.Pool, args map[string]any) (string, error) {
+				rows, err := db.Query(ctx, `SELECT a.hostname, a.source, COALESCE(u.full_name,''), COALESCE(u.username,''), a.last_checkin
+					FROM endpoint_agents a LEFT JOIN users u ON u.id = a.user_id ORDER BY a.last_checkin DESC`)
+				if err != nil {
+					return "", err
+				}
+				defer rows.Close()
+				var b strings.Builder
+				b.WriteString("호스트 | 소스 | 담당자 | 마지막접속\n")
+				for rows.Next() {
+					var host, src, fn, un string
+					var last time.Time
+					if err := rows.Scan(&host, &src, &fn, &un, &last); err == nil {
+						who := "(미배정)"
+						if un != "" {
+							who = fmt.Sprintf("%s(%s)", fn, un)
+						}
+						fmt.Fprintf(&b, "%s | %s | %s | %s\n", host, src, who, last.Format(time.RFC3339))
+					}
+				}
+				return b.String(), nil
+			},
+		},
+	}
+}
+
+// --- HTTP handler ---
+
+// Handler exposes the assistant over HTTP (admin-only via router middleware).
+type Handler struct {
+	engine *Engine
+	logger *slog.Logger
+}
+
+func NewHandler(engine *Engine, logger *slog.Logger) *Handler {
+	return &Handler{engine: engine, logger: logger}
+}
+
+func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if h.engine == nil || !h.engine.Enabled() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "AI 비서가 설정되지 않았습니다 (DOCVAULT_OPENAI_API_KEY 또는 DOCVAULT_GEMINI_API_KEY 필요)."})
+		return
+	}
+	var req struct {
+		Message string `json:"message"`
+		History []Msg  `json:"history"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Message) == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "message가 필요합니다."})
+		return
+	}
+	actorID := int64(0)
+	if u := auth.UserFromContext(r.Context()); u != nil {
+		actorID = u.ID
+	}
+	answer, history, err := h.engine.Chat(r.Context(), actorID, req.Message, req.History)
+	if err != nil {
+		h.logger.Error("agent chat", "error", err)
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]string{"error": "AI 응답 생성 실패"})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{"answer": answer, "history": history})
+}

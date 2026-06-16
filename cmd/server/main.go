@@ -17,6 +17,7 @@ import (
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/database"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/endpoint"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/folder"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/agent"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/insight"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/tracking"
@@ -253,10 +254,17 @@ func run(logger *slog.Logger) error {
 	trackerBridge := &trackerBridge{tracker: fileTracker}
 
 	// AI summary bot (optional — disabled unless DOCVAULT_ANTHROPIC_API_KEY is set)
-	summarizer := insight.NewSummarizer(pool, cfg.AnthropicAPIKey, cfg.AIModel, logger)
+	summarizer := insight.NewSummarizer(pool, cfg.AnthropicAPIKey, cfg.GeminiAPIKey, cfg.AIModel, logger)
 	insightHandler := insight.NewHandler(summarizer, logger)
 	if summarizer.Enabled() {
 		logger.Info("AI summary enabled", "model", cfg.AIModel)
+	}
+
+	// AI assistant: tool-use agent over live data (same keys as the summary bot).
+	agentProvider := agent.NewProvider(cfg.OpenAIAPIKey, cfg.GeminiAPIKey, cfg.AIProvider, cfg.AIModel)
+	agentHandler := agent.NewHandler(agent.NewEngine(pool, agentProvider, logger), logger)
+	if agentProvider != nil {
+		logger.Info("AI assistant enabled", "provider", agentProvider.Name())
 	}
 
 	// Page handler (HTML templates)
@@ -273,6 +281,7 @@ func run(logger *slog.Logger) error {
 		UEBAAnalyzer:   bridge,
 		FileTracker:    trackerBridge,
 		PSKConfigured:  cfg.OsqueryPSK != "",
+		AgentPSK:       cfg.OsqueryPSK,
 		Logger:         logger,
 	})
 	if err != nil {
@@ -286,6 +295,7 @@ func run(logger *slog.Logger) error {
 		FolderRepo:   folderRepo,
 		UserRepo:     userRepo,
 		AlertRepo:    alertRepo,
+		EndpointRepo: endpointRepo,
 		Logger:       logger,
 	})
 
@@ -304,6 +314,7 @@ func run(logger *slog.Logger) error {
 		FormHandler:     formHandler,
 		SSEHub:          sseHub,
 		InsightHandler:  insightHandler,
+		AgentHandler:    agentHandler,
 		Logger:          logger,
 	})
 

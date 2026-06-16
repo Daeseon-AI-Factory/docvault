@@ -2,6 +2,24 @@
 <button class="btn btn-sm btn-primary" onclick="document.getElementById('create-user-modal').style.display='block'">Add User</button>
 {{end}}
 {{define "content"}}
+<div class="card mb-2">
+  <div class="card-header">📥 직원 일괄 등록 (CSV) / Bulk import users</div>
+  <p class="text-muted" style="padding:.5rem 0;">
+    엑셀에서 <b>CSV로 저장</b> 후 업로드하면 직원이 한 번에 등록됩니다. 헤더 순서:
+    <code>username,full_name,email,department,role</code> — <b>username만 필수</b>, role은 employee/manager/admin (기본 employee).<br>
+    <span style="opacity:.7">Save your Excel sheet as CSV and upload. Columns: username,full_name,email,department,role (only username required).</span><br>
+    <span class="text-muted">예: <code>kim.cs,김철수,kim@company.kr,영업,employee</code></span>
+  </p>
+  <form method="POST" action="/admin/users/import" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:center;">
+    <input type="file" name="file" accept=".csv,text/csv" required class="form-control" style="max-width:360px;">
+    <button type="submit" class="btn btn-primary">업로드 &amp; 등록</button>
+  </form>
+  <p class="text-muted" style="margin-top:.5rem;font-size:.85rem;">
+    ※ 일괄 등록된 직원은 <b>임의 비밀번호</b>로 생성됩니다(이벤트 귀속·관리용). 로그인이 필요한 사람만 사용자 편집에서 비번을 재설정하세요.
+  </p>
+</div>
+<div id="import-result" class="card mb-2" style="display:none;background:#f0fdf4;border-color:#bbf7d0;"><div style="padding:.6rem 1rem;color:#166534;" id="import-result-text"></div></div>
+
 <div class="card">
   <div class="table-wrap">
     <table>
@@ -70,4 +88,18 @@
     </form>
   </div>
 </div>
+<script>
+(function(){
+  var p=new URLSearchParams(location.search);
+  if(p.has('imported')){
+    var box=document.getElementById('import-result');
+    var t=document.getElementById('import-result-text');
+    if(box&&t){
+      var sk=p.get('skipped')||'0';
+      t.textContent='✅ 직원 '+(p.get('imported')||'0')+'명 등록 완료'+(sk!=='0'?(' · 건너뜀 '+sk+'명(중복 등)'):'');
+      box.style.display='block';
+    }
+  }
+})();
+</script>
 {{end}}

@@ -32,7 +32,10 @@
         <li><a href="/static/guide.html" target="_blank">📘 Setup Guide</a></li>
       </ul>
       <div class="sidebar-user">
-        Signed in as <strong>{{.Username}}</strong>
+        <button type="button" id="langToggle" data-i18n-skip
+          style="background:transparent;border:1px solid var(--sidebar-text);color:var(--sidebar-text);border-radius:6px;padding:3px 10px;font-size:.75rem;cursor:pointer;opacity:.85;margin-bottom:.6rem;">🌐 English</button>
+        <br>
+        <span>Signed in as</span> <strong>{{.Username}}</strong>
         <br>
         <a href="/logout" style="color:var(--sidebar-text);font-size:0.8rem;">Logout</a>
       </div>
@@ -48,6 +51,64 @@
       </div>
     </div>
   </div>
+  <script>
+  (function(){
+    var DICT={
+      "Dashboard":"대시보드","Files":"파일","File":"파일","Monitoring":"모니터링",
+      "Endpoint Events":"엔드포인트 이벤트","Audit Logs":"감사 로그","Admin":"관리자",
+      "Users":"사용자","Alerts":"알림","Agent Status":"에이전트 상태","Monitoring Config":"모니터링 설정",
+      "Help":"도움말","📘 Setup Guide":"📘 설치 가이드","Logout":"로그아웃","Signed in as":"로그인 계정:",
+      "Total Events":"전체 이벤트","Events Today":"오늘 이벤트","Files Stored":"저장된 파일",
+      "Active Alerts":"활성 알림","Recent Activity":"최근 활동","Recent Alerts":"최근 알림",
+      "Risk Users (Today)":"위험 사용자 (오늘)","View All":"전체 보기","No active alerts":"활성 알림 없음",
+      "Alert Management":"알림 관리","User Management":"사용자 관리","Access Log":"접근 기록",
+      "Agent Configuration":"에이전트 설정","Alert Rules":"알림 규칙","Endpoint Agents":"엔드포인트 에이전트",
+      "Endpoint Events Search":"엔드포인트 이벤트 검색","File Information":"파일 정보","Folders":"폴더",
+      "Reset Password":"비밀번호 재설정","Version History":"버전 기록","Audit Search":"감사 검색",
+      "Action":"작업","Comment":"비고","Created":"생성일","Date":"날짜","Department":"부서","Email":"이메일",
+      "Event Type":"이벤트 유형","Events (24h)":"이벤트(24h)","Full Name":"이름","Host":"호스트",
+      "Hostname":"호스트명","Last Event":"마지막 이벤트","Level":"수준","Message":"메시지","Modified":"수정일",
+      "Name":"이름","Process":"프로세스","Role":"역할","Score":"점수","Severity":"심각도","Size":"크기",
+      "Source":"소스","Status":"상태","Target":"대상","Time":"시간","Type":"유형","Uploaded By":"업로더",
+      "User":"사용자","Username":"사용자명","Version":"버전","No agents reporting":"보고 중인 에이전트 없음",
+      "Acknowledge":"확인","Ack":"확인","Add Rule":"규칙 추가","Add User":"사용자 추가","Cancel":"취소",
+      "Check In":"체크인","Checkout":"체크아웃","Create":"생성","Create Rule":"규칙 생성","Create User":"사용자 생성",
+      "Download":"다운로드","Edit":"편집","Export CSV":"CSV 내보내기","Load More":"더 보기","New Folder":"새 폴더",
+      "Save Changes":"변경 저장","Search":"검색","Sign In":"로그인","Upload":"업로드","Upload File":"파일 업로드",
+      "Online":"온라인","Offline":"오프라인","Password":"비밀번호"
+    };
+    function apply(root,lang){
+      if(!root||!root.querySelectorAll) return;
+      var els=root.querySelectorAll('*');
+      for(var i=0;i<els.length;i++){
+        var el=els[i];
+        if(el.children.length) continue;
+        if(el.hasAttribute('data-i18n-skip')) continue;
+        var orig=el.getAttribute('data-i18n-o');
+        if(orig===null) orig=el.textContent;
+        var key=orig.trim();
+        if(!DICT[key]) continue;
+        if(el.getAttribute('data-i18n-o')===null) el.setAttribute('data-i18n-o',orig);
+        el.textContent=(lang==='ko')?orig.replace(key,DICT[key]):orig;
+      }
+    }
+    function cur(){ try{return localStorage.getItem('dvlang')||'ko';}catch(e){return 'ko';} }
+    function setLang(lang){
+      try{localStorage.setItem('dvlang',lang);}catch(e){}
+      document.documentElement.lang=(lang==='ko')?'ko':'en';
+      apply(document.body,lang);
+      var b=document.getElementById('langToggle');
+      if(b) b.textContent=(lang==='ko')?'🌐 English':'🌐 한국어';
+    }
+    document.addEventListener('DOMContentLoaded',function(){
+      setLang(cur());
+      var b=document.getElementById('langToggle');
+      if(b) b.addEventListener('click',function(){ setLang(cur()==='ko'?'en':'ko'); });
+      document.body.addEventListener('htmx:afterSwap',function(e){ apply((e.detail&&e.detail.target)||document.body,cur()); });
+      document.body.addEventListener('htmx:load',function(e){ apply((e.detail&&e.detail.elt)||document.body,cur()); });
+    });
+  })();
+  </script>
 </body>
 </html>
 {{end}}

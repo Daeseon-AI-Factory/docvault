@@ -86,6 +86,7 @@ type PageHandler struct {
 	uebaProvider   UEBARiskProvider
 	fileTracker    FileTrackerUI
 	pskConfigured  bool
+	agentPSK       string
 	rateLimiter    *LoginRateLimiter
 	logger         *slog.Logger
 }
@@ -103,6 +104,7 @@ type PageHandlerDeps struct {
 	UEBAAnalyzer   UEBARiskProvider
 	FileTracker    FileTrackerUI
 	PSKConfigured  bool
+	AgentPSK       string
 	Logger         *slog.Logger
 }
 
@@ -125,6 +127,7 @@ func NewPageHandler(deps PageHandlerDeps) (*PageHandler, error) {
 		uebaProvider:   deps.UEBAAnalyzer,
 		fileTracker:    deps.FileTracker,
 		pskConfigured:  deps.PSKConfigured,
+		agentPSK:       deps.AgentPSK,
 		rateLimiter:    NewLoginRateLimiter(5, 10*time.Minute, 15*time.Minute),
 		logger:         deps.Logger,
 	}, nil
@@ -891,6 +894,18 @@ func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
 	data := h.pageData(r, "Agent Status", "admin-agents")
 	data["Agents"] = agents
 	data["PSKConfigured"] = h.pskConfigured
+	data["AgentPSK"] = h.agentPSK
+	scheme := "https"
+	if xfp := r.Header.Get("X-Forwarded-Proto"); xfp != "" {
+		scheme = xfp
+	}
+	data["ServerURL"] = scheme + "://" + r.Host
+	if regAgents, err := h.endpointRepo.ListAgents(r.Context()); err == nil {
+		data["RegisteredAgents"] = regAgents
+	}
+	if allUsers, err := h.userRepo.List(r.Context()); err == nil {
+		data["AllUsers"] = allUsers
+	}
 	renderPage(w, h.tc, "admin_agents.html", data)
 }
 

@@ -219,3 +219,67 @@ func (r *Repository) UnifiedTimeline(ctx context.Context, userID int64, limit, o
 	}
 	return entries, rows.Err()
 }
+
+// AgentRow is a registered endpoint agent joined with its assigned user.
+type AgentRow struct {
+	ID          int64
+	Hostname    string
+	Source      string
+	UserID      *int64
+	Username    *string
+	FullName    *string
+	IsActive    bool
+	LastCheckin time.Time
+	EventCount  int64
+}
+
+// ListAgents returns all registered agents with their assigned user (if any) and
+// a 24h event count, most recently seen first.
+func (r *Repository) ListAgents(ctx context.Context) ([]*AgentRow, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT a.id, a.hostname, a.source, a.user_id, u.username, u.full_name, a.is_active, a.last_checkin,
+		        COALESCE((SELECT COUNT(*) FROM endpoint_events e
+		                  WHERE e.hostname = a.hostname AND e.event_time >= NOW() - INTERVAL '24 hours'), 0) AS cnt
+		 FROM endpoint_agents a
+		 LEFT JOIN users u ON u.id = a.user_id
+		 ORDER BY a.last_checkin DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list agents: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*AgentRow
+	for rows.Next() {
+		var a AgentRow
+		if err := rows.Scan(&a.ID, &a.Hostname, &a.Source, &a.UserID, &a.Username, &a.FullName,
+			&a.IsActive, &a.LastCheckin, &a.EventCount); err != nil {
+			return nil, fmt.Errorf("scan agent: %w", err)
+		}
+		out = append(out, &a)
+	}
+	return out, rows.Err()
+}
+
+// AssignAgent sets (or clears, when userID is nil) the employee for a registered
+// agent, and back-fills past events from that host so timelines attribute them.
+func (r *Repository) AssignAgent(ctx context.Context, agentID int64, userID *int64) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin assign tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var hostname string
+	if err := tx.QueryRow(ctx,
+		`UPDATE endpoint_agents SET user_id = $1 WHERE id = $2 RETURNING hostname`,
+		userID, agentID,
+	).Scan(&hostname); err != nil {
+		return fmt.Errorf("assign agent %d: %w", agentID, err)
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE endpoint_events SET user_id = $1 WHERE hostname = $2`, userID, hostname,
+	); err != nil {
+		return fmt.Errorf("backfill events for %s: %w", hostname, err)
+	}
+	return tx.Commit(ctx)
+}

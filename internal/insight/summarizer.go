@@ -27,28 +27,37 @@ const (
 
 // Summarizer builds a digest of recent activity and asks Claude to summarize it.
 type Summarizer struct {
-	db     *pgxpool.Pool
-	apiKey string
-	model  string
-	client *http.Client
-	logger *slog.Logger
+	db        *pgxpool.Pool
+	apiKey    string // Anthropic
+	geminiKey string // Google Gemini (takes precedence if set)
+	model     string
+	client    *http.Client
+	logger    *slog.Logger
 }
 
-func NewSummarizer(db *pgxpool.Pool, apiKey, model string, logger *slog.Logger) *Summarizer {
-	if model == "" {
-		model = defaultModel
+func NewSummarizer(db *pgxpool.Pool, anthropicKey, geminiKey, model string, logger *slog.Logger) *Summarizer {
+	s := &Summarizer{
+		db:        db,
+		apiKey:    anthropicKey,
+		geminiKey: geminiKey,
+		model:     model,
+		client:    &http.Client{Timeout: 60 * time.Second},
+		logger:    logger,
 	}
-	return &Summarizer{
-		db:     db,
-		apiKey: apiKey,
-		model:  model,
-		client: &http.Client{Timeout: 60 * time.Second},
-		logger: logger,
+	switch {
+	case geminiKey != "":
+		// Using Gemini — pick a Gemini model unless one was explicitly configured.
+		if !strings.HasPrefix(model, "gemini") {
+			s.model = "gemini-flash-latest" // alias → always current flash (won't get retired)
+		}
+	case model == "":
+		s.model = defaultModel
 	}
+	return s
 }
 
-// Enabled reports whether an API key is configured.
-func (s *Summarizer) Enabled() bool { return s.apiKey != "" }
+// Enabled reports whether any AI provider key is configured.
+func (s *Summarizer) Enabled() bool { return s.apiKey != "" || s.geminiKey != "" }
 
 // Summary is the result returned to callers.
 type Summary struct {
@@ -73,7 +82,12 @@ func (s *Summarizer) Generate(ctx context.Context, hours int) (*Summary, error) 
 		return nil, fmt.Errorf("build digest: %w", err)
 	}
 
-	text, err := s.callClaude(ctx, digest)
+	var text string
+	if s.geminiKey != "" {
+		text, err = s.callGemini(ctx, digest)
+	} else {
+		text, err = s.callClaude(ctx, digest)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -266,4 +280,96 @@ func (s *Summarizer) doRequest(ctx context.Context, body []byte) (text string, r
 		return "", false, fmt.Errorf("empty response (stop_reason=%s)", parsed.StopReason)
 	}
 	return out, false, nil
+}
+
+// --- Gemini (Google Generative Language) API, raw net/http ---
+
+const geminiURL = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
+
+type geminiContent struct {
+	Role  string       `json:"role,omitempty"`
+	Parts []geminiPart `json:"parts"`
+}
+type geminiPart struct {
+	Text string `json:"text"`
+}
+type geminiRequest struct {
+	SystemInstruction *geminiContent  `json:"systemInstruction,omitempty"`
+	Contents          []geminiContent `json:"contents"`
+	GenerationConfig  map[string]any  `json:"generationConfig,omitempty"`
+}
+type geminiResponse struct {
+	Candidates []struct {
+		Content geminiContent `json:"content"`
+	} `json:"candidates"`
+	Error *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func (s *Summarizer) callGemini(ctx context.Context, digest string) (string, error) {
+	body, err := json.Marshal(geminiRequest{
+		SystemInstruction: &geminiContent{Parts: []geminiPart{{Text: summarySystemPrompt}}},
+		Contents:          []geminiContent{{Role: "user", Parts: []geminiPart{{Text: digest}}}},
+		GenerationConfig: map[string]any{
+			"maxOutputTokens": maxSummaryTokens,
+			"temperature":     0.3,
+			"thinkingConfig":  map[string]any{"thinkingBudget": 0}, // off → direct briefing, no scratchpad leak
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal gemini request: %w", err)
+	}
+	url := fmt.Sprintf(geminiURL, s.model)
+
+	backoff := time.Second
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("content-type", "application/json")
+		req.Header.Set("x-goog-api-key", s.geminiKey)
+
+		resp, err := s.client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("gemini request: %w", err)
+		} else {
+			data, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			var parsed geminiResponse
+			_ = json.Unmarshal(data, &parsed)
+			if resp.StatusCode == http.StatusOK {
+				var sb strings.Builder
+				for _, c := range parsed.Candidates {
+					for _, p := range c.Content.Parts {
+						sb.WriteString(p.Text)
+					}
+				}
+				if out := strings.TrimSpace(sb.String()); out != "" {
+					return out, nil
+				}
+				return "", fmt.Errorf("empty gemini response")
+			}
+			msg := strings.TrimSpace(string(data))
+			if parsed.Error != nil {
+				msg = parsed.Error.Message
+			}
+			lastErr = fmt.Errorf("gemini %d: %s", resp.StatusCode, msg)
+			if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
+				return "", lastErr // non-retryable (bad key / bad request)
+			}
+		}
+		if attempt < 3 {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+		}
+	}
+	return "", lastErr
 }

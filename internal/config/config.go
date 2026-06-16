@@ -15,8 +15,12 @@ type Config struct {
 	SlackWebhook string
 	AlertEmail   string
 
-	// Optional: enables the AI summary bot (Claude Messages API). Disabled if empty.
+	// Optional: enables the AI summary bot + assistant. Disabled if all keys empty.
+	// Provider precedence (when AIProvider unset): openai > gemini > anthropic.
 	AnthropicAPIKey string
+	GeminiAPIKey    string
+	OpenAIAPIKey    string
+	AIProvider      string // "openai" | "gemini" | "anthropic" (optional override)
 	AIModel         string
 }
 
@@ -32,6 +36,9 @@ func Load() (*Config, error) {
 		AlertEmail:   os.Getenv("DOCVAULT_ALERT_EMAIL"),
 
 		AnthropicAPIKey: os.Getenv("DOCVAULT_ANTHROPIC_API_KEY"),
+		GeminiAPIKey:    os.Getenv("DOCVAULT_GEMINI_API_KEY"),
+		OpenAIAPIKey:    os.Getenv("DOCVAULT_OPENAI_API_KEY"),
+		AIProvider:      os.Getenv("DOCVAULT_AI_PROVIDER"),
 		AIModel:         os.Getenv("DOCVAULT_AI_MODEL"),
 	}
 

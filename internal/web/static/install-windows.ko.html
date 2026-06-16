@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DocVault 에이전트 설치 안내 (Windows)</title>
+<style>
+  body{margin:0;background:#f1f5f9;color:#0f172a;line-height:1.7;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:28px 20px 80px}
+  h1{font-size:1.5rem;margin:.2rem 0 .4rem}
+  h2{font-size:1.15rem;margin:1.6rem 0 .5rem;border-bottom:2px solid #e2e8f0;padding-bottom:.3rem}
+  .lead{color:#475569}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px 20px;margin:14px 0;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .warn{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin:10px 0;color:#92400e}
+  .ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;margin:10px 0;color:#166534}
+  pre{background:#0b1220;color:#e2e8f0;padding:14px;border-radius:8px;overflow:auto;font-size:.86rem;line-height:1.6}
+  code{font-family:"SF Mono",Consolas,Menlo,monospace}
+  :not(pre)>code{background:#e2e8f0;border-radius:4px;padding:1px 6px;font-size:.85em}
+  ol li,ul li{margin:.5rem 0}
+  .step{font-weight:700;color:#2563eb}
+  .btn{display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:700;margin:6px 0}
+  .key{color:#f59e0b;font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🛡️ DocVault 모니터링 에이전트 설치 (Windows)</h1>
+  <p class="lead">이 PC의 문서 활동(복사·USB 반출·외부 전송 등)을 회사 보안 서버로 보내는 작은 프로그램을 설치합니다. 약 5분이면 끝납니다.</p>
+
+  <div class="warn">⚠️ <b>회사 소유 PC에서, 회사 정책과 본인 동의 하에만</b> 설치하세요. 개인 PC나 몰래 감시 용도로는 사용하지 않습니다.</div>
+
+  <div class="card">
+    <h2>설치 — 명령 한 번이면 끝</h2>
+    <ol>
+      <li><span class="step">PowerShell을 관리자 권한으로 열기</span><br>
+        시작 버튼 → <code>powershell</code> 입력 → <b>Windows PowerShell</b> 에서 <b>마우스 우클릭</b> → <b>관리자 권한으로 실행</b> → "예" 클릭</li>
+
+      <li><span class="step">아래 내용을 통째로 복사해 붙여넣고 Enter</span>
+        <pre><code>mkdir C:\DocVault -Force
+Invoke-WebRequest -Uri "https://docvault.daeseon.ai/download/dvclip-windows-amd64.exe" -OutFile "C:\DocVault\dvclip.exe"
+Unblock-File C:\DocVault\dvclip.exe
+setx /M DOCVAULT_SERVER_URL "https://docvault.daeseon.ai"
+setx /M DOCVAULT_AGENT_PSK "<span class="key">관리자에게-받은-인증키</span>"
+C:\DocVault\dvclip.exe install
+net start DocVaultClipAgent</code></pre>
+        <div class="warn">🔑 <span class="key">관리자에게-받은-인증키</span> 부분은 <b>관리자가 따로 알려준 값</b>으로 반드시 바꿔주세요.</div>
+      </li>
+
+      <li><span class="step">파란 경고창이 뜨면 "추가 정보 → 실행"</span><br>
+        <b>"Windows의 PC를 보호했습니다"</b> 창이 뜰 수 있습니다 → <b>"추가 정보"</b> 클릭 → <b>"실행"</b> 클릭.<br>
+        <span style="color:#64748b">(정상입니다 — 외부 서명을 받지 않은 사내 프로그램이라 그렇습니다. 안전합니다.)</span></li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>잘 설치됐는지 확인</h2>
+    <p>마지막에 <code>...서비스를 시작했습니다</code> 또는 <code>service was started successfully</code> 가 보이면 끝입니다. ✅</p>
+    <div class="ok">확인 명령: <code>Get-Service DocVaultClipAgent</code> → 상태가 <b>Running</b> 이면 정상 작동 중입니다.</div>
+    <p>설치 후엔 PC가 켜질 때 <b>자동으로 시작</b>되고, 꺼졌다 켜져도 알아서 다시 돕니다.</p>
+  </div>
+
+  <div class="card">
+    <h2>제거 (필요할 때)</h2>
+    <p>관리자 PowerShell에서:</p>
+    <pre><code>net stop DocVaultClipAgent
+C:\DocVault\dvclip.exe uninstall</code></pre>
+  </div>
+
+  <div class="card">
+    <h2>문제가 생기면</h2>
+    <ul>
+      <li><b>"이 시스템에서 스크립트를 실행할 수 없습니다" 오류</b> → 먼저 <code>Set-ExecutionPolicy -Scope Process Bypass -Force</code> 입력 후 다시 시도.</li>
+      <li><b>다운로드 실패</b> → 인터넷 연결과 <code>https://docvault.daeseon.ai</code> 접속을 확인.</li>
+      <li><b>"net start" 오류</b> → 잠시 후 <code>net start DocVaultClipAgent</code> 다시 실행.</li>
+      <li>그래도 안 되면 화면을 캡처해서 관리자에게 보내세요.</li>
+    </ul>
+  </div>
+
+  <p style="text-align:center;color:#94a3b8;font-size:.85rem;margin-top:30px">DocVault · 내부 활동 모니터링 · 회사 동의 기반 운영</p>
+</div>
+</body>
+</html>
