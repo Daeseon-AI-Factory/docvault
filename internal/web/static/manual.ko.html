@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DocVault 사용 설명서 (쉬운 버전)</title>
+<style>
+  body{margin:0;background:#f1f5f9;color:#0f172a;line-height:1.75;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+  .wrap{max-width:780px;margin:0 auto;padding:26px 20px 90px}
+  h1{font-size:1.6rem;margin:.2rem 0}
+  h2{font-size:1.2rem;margin:1.8rem 0 .5rem}
+  .sub{color:#475569;font-size:1.05rem}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px 22px;margin:14px 0;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .big{background:#eff6ff;border:2px solid #2563eb;border-radius:14px;padding:18px 22px;margin:16px 0}
+  .step{display:flex;gap:12px;align-items:flex-start;margin:.7rem 0}
+  .num{flex:0 0 28px;height:28px;border-radius:50%;background:#2563eb;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center}
+  code{background:#e2e8f0;border-radius:5px;padding:2px 7px;font-size:.92em}
+  .q{background:#f8fafc;border-left:3px solid #2563eb;padding:.5rem .9rem;margin:.4rem 0;border-radius:0 8px 8px 0}
+  .tip{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 14px;color:#166534;margin:10px 0}
+  .warn{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;color:#92400e;margin:10px 0}
+  table{width:100%;border-collapse:collapse}
+  td{padding:.45rem .3rem;border-bottom:1px solid #eef2f7;vertical-align:top}
+  td:first-child{font-weight:700;white-space:nowrap;width:140px}
+  a{color:#2563eb}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🛡️ DocVault 사용 설명서</h1>
+  <p class="sub">회사 컴퓨터에서 <b>중요 파일이 새어나가는지</b> 자동으로 지켜보고 기록해주는 프로그램입니다. 어렵지 않아요. 천천히 따라오세요.</p>
+
+  <div class="big">
+    <h2 style="margin-top:0">😎 제일 중요한 한 가지</h2>
+    <p style="font-size:1.1rem;margin:.3rem 0"><b>모르면 그냥 AI 비서한테 한국어로 물어보세요.</b></p>
+    <p>화면 위쪽 <b>“💬 AI 비서에게 질문”</b> 칸에 평소 말하듯 치면 됩니다. 맞춤법 틀려도, 대충 말해도 알아들어요.</p>
+    <div class="q">예) “오늘 위험한 거 있었어?”</div>
+    <div class="q">예) “USB로 파일 빼간 사람 있나”</div>
+    <div class="q">예) “김철수 이번주 뭐했어”</div>
+    <div class="q">예) “직원 박영희 employee로 만들어줘”</div>
+  </div>
+
+  <div class="card">
+    <h2>1. 들어가기</h2>
+    <div class="step"><div class="num">1</div><div>웹브라우저(크롬 등)에서 <b>관리자에게 받은 주소</b>로 접속</div></div>
+    <div class="step"><div class="num">2</div><div><b>아이디·비밀번호</b> 입력 → 로그인</div></div>
+    <div class="step"><div class="num">3</div><div>끝! 첫 화면이 <b>대시보드</b>입니다.</div></div>
+    <div class="tip">화면이 영어로 보이면 왼쪽 아래 <b>🌐 한국어</b> 버튼을 누르세요.</div>
+  </div>
+
+  <div class="card">
+    <h2>2. 화면이 뭐가 뭔지 (왼쪽 메뉴)</h2>
+    <table>
+      <tr><td>대시보드</td><td>한눈에 보기. 위에 <b>AI 비서</b>랑 <b>위험 알림</b>이 있어요.</td></tr>
+      <tr><td>엔드포인트 이벤트</td><td>직원 PC에서 일어난 일들(복사·전송 등) 목록.</td></tr>
+      <tr><td>감사 로그</td><td>누가 이 사이트에 로그인/조회했는지 기록.</td></tr>
+      <tr><td>사용자</td><td>직원 명단 관리. <b>엑셀(CSV)로 한꺼번에 등록</b> 가능.</td></tr>
+      <tr><td>알림</td><td>위험해 보이는 행동이 자동으로 떠요. 확인하면 “확인” 누르기.</td></tr>
+      <tr><td>에이전트 상태</td><td>어느 PC가 연결됐는지 + <b>PC를 직원에게 배정</b>.</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>3. 자주 하는 일 3가지</h2>
+    <p><b>① 직원 등록</b> — 사용자 메뉴에서 엑셀을 CSV로 저장해 올리거나, <b>AI에게 “직원 만들어줘”</b>라고 하면 끝.</p>
+    <p><b>② 직원 PC 연결</b> — 그 PC에 작은 프로그램을 한 번 깝니다. (설치법: <a href="/download/install-windows.ko.html">윈도우 설치 안내</a>)</p>
+    <p><b>③ PC ↔ 직원 짝지어주기</b> — 에이전트 상태에서 PC 옆 칸에 담당 직원을 골라 “지정”. 그래야 “이 PC = 누구”인지 보여요. (AI한테 “이 PC 누구한테 배정해줘” 라고 해도 됩니다.)</p>
+  </div>
+
+  <div class="card">
+    <h2>4. AI 비서가 해주는 것</h2>
+    <p><b>물어보기</b>: 위험 활동 요약, 특정 직원/PC 조회, 알림 설명 등 — 실제 데이터를 보고 답해줍니다(지어내지 않음).</p>
+    <p><b>시키기</b>: 직원 생성, PC 배정, 알림 확인 같은 <b>행동</b>도 합니다.</p>
+    <div class="tip">✅ AI가 한 행동은 대시보드 <b>“🧾 최근 AI 작업”</b>에서 <b>“되돌리기”</b> 한 번으로 취소할 수 있어요. 실수해도 안전합니다.</div>
+  </div>
+
+  <div class="card">
+    <h2>5. 막히면?</h2>
+    <p>1) 일단 <b>AI 비서</b>한테 물어보세요. 2) 그래도 안 되면 화면을 <b>캡처해서 관리자</b>에게 보내세요. 끝.</p>
+    <div class="warn">⚠️ 이 도구는 <b>회사 소유 PC</b>를 <b>직원 동의</b> 하에만 사용합니다. 개인 PC·몰래 감시는 안 됩니다.</div>
+  </div>
+
+  <div class="card" style="background:#0b1220;color:#e2e8f0;border:none">
+    <h2 style="margin-top:0">왜 DocVault인가요?</h2>
+    <p style="color:#cbd5e1">전문가 없이도 굴러갑니다. <b>설치는 명령 한 줄, 운영은 AI에게 말로</b> 하면 됩니다. USB 반출·외부 전송·대량 복사 같은 내부 정보 유출을 자동으로 잡아내고, 모든 기록은 위변조 방지(해시 체인)로 남습니다. 작은 팀이 <b>비싼 보안 솔루션 없이</b> 핵심만 안전하게 — 그게 DocVault입니다.</p>
+  </div>
+
+  <p style="text-align:center;color:#94a3b8;font-size:.85rem;margin-top:24px">DocVault · 내부 활동 모니터링 · 회사 동의 기반</p>
+</div>
+</body>
+</html>
