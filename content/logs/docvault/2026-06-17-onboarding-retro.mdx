@@ -3,7 +3,7 @@ title: "Honest retro: shipping the agent onboarding (what went wrong, both sides
 date: "2026-06-17"
 project: "docvault"
 kind: "tech-retro"
-visibility: "private"
+visibility: "public"
 language: "en"
 summary: "Candid post-mortem of building the one-click Windows installer + guides + in-app install page: the assistant's mistakes, the environment dead-ends, the real-world gotchas, and the process friction. No sugarcoating."
 tags: ["retro", "onboarding", "windows", "process"]
@@ -50,6 +50,22 @@ This is the unvarnished version. Recorded because the lessons cost real time.
 - **Behavioral verification on real Windows** (CI run `27661890975`): proved the registry-`Environment` install mechanism makes the service read its config and connect with no reboot.
 - One **in-app `/admin/install`** page composing the download + the visual guide.
 - Co-located deploy on the shared NCP box via rsync without breaking the other project on it.
+
+## How we now PREVENT each of these (guardrails in place, not just "lessons")
+
+Words don't prevent recurrence; mechanisms do. Each mistake above is now backed by something enforceable:
+
+| Mistake | Guardrail now in place |
+|---|---|
+| Claimed "done" without checking | **CLAUDE.md Guardrail #1** — a deliverable can't be reported done without pasting this-turn proof (curl status / `/health` 200 / screenshot / CI). |
+| Lost track of git branch | **CLAUDE.md Guardrail #2** — `git branch --show-current` before any git surgery; `main` is PR-only. |
+| `amend` broke the logged hash (×2) | **CLAUDE.md Guardrail #3** — commit → read hash → write it → log in a *separate* commit; never amend after baking a hash. |
+| Rebuilt the guide 3× | **CLAUDE.md Guardrail #4** — confirm the shape/actor of a UX deliverable before building; ask one question instead of guessing. |
+| Redeploy churn + filled root disk | **`scripts/deploy-box.sh`** — one command does rsync → build → recreate → `builder prune` → verify `/health`; config in gitignored `scripts/.deploy.env`. |
+| SmartScreen / `.bat`-email surprises | **CLAUDE.md Guardrail #6** — treated as givens now (signed-less install, KakaoTalk/USB delivery, dialog-mockup guide, remote install). |
+| Test-harness shell bugs | **CLAUDE.md Guardrail #7** — `bash` not `zsh`, quote every variable; real-Windows testing = `windows-latest` CI. |
+
+These live in [CLAUDE.md → "Guardrails (learned the hard way)"](../../../CLAUDE.md), which is loaded into every session — so the prevention is automatic next time, not dependent on remembering this post.
 
 ## Top lessons to keep
 
