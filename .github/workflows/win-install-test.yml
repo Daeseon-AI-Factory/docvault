@@ -1,0 +1,100 @@
+name: win-install-test
+
+# Real amd64 Windows end-to-end test of the one-click installer mechanism:
+# does writing env into the service's registry Environment (REG_MULTI_SZ) make
+# the running service actually read DOCVAULT_SERVER_URL / DOCVAULT_AGENT_PSK and
+# connect? Proven behaviorally: point the service at a local listener and watch
+# for the enroll POST (with the PSK header) on the configured port.
+
+on:
+  push:
+    branches: [ci/windows-install-test]
+  workflow_dispatch:
+
+jobs:
+  install-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: One-click installer end-to-end (registry Environment -> service connect)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "=== build agent (current source) ==="
+          go build -o dvclip.exe ./cmd/clipagent
+          if ($LASTEXITCODE -ne 0) { throw "agent build failed" }
+
+          Write-Host "=== build local listener (9099 = configured URL, 8080 = agent default) ==="
+          $src = @(
+            'package main',
+            'import ("fmt"; "net/http"; "os")',
+            'func handler(port string, f *os.File) http.HandlerFunc {',
+            '  return func(w http.ResponseWriter, r *http.Request) {',
+            '    f.WriteString(fmt.Sprintf("HIT port=%s method=%s path=%s psk=%s\n", port, r.Method, r.URL.Path, r.Header.Get("X-Agent-PSK")))',
+            '    f.Sync()',
+            '    w.WriteHeader(200)',
+            '    w.Write([]byte("ok"))',
+            '  }',
+            '}',
+            'func main() {',
+            '  f, _ := os.Create("listener.log")',
+            '  m1 := http.NewServeMux(); m1.HandleFunc("/", handler("9099", f))',
+            '  m2 := http.NewServeMux(); m2.HandleFunc("/", handler("8080", f))',
+            '  go http.ListenAndServe("127.0.0.1:9099", m1)',
+            '  go http.ListenAndServe("127.0.0.1:8080", m2)',
+            '  select {}',
+            '}'
+          ) -join "`n"
+          Set-Content -Path listener.go -Value $src -Encoding ascii
+          go build -o listener.exe listener.go
+          if ($LASTEXITCODE -ne 0) { throw "listener build failed" }
+
+          $listener = Start-Process -FilePath .\listener.exe -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 2
+
+          Write-Host "=== install service (same as the .bat) ==="
+          .\dvclip.exe install
+          if ($LASTEXITCODE -ne 0) { throw "service install failed" }
+
+          Write-Host "=== inject env via service registry Environment (the risky bit) ==="
+          reg add "HKLM\SYSTEM\CurrentControlSet\Services\DocVaultClipAgent" /v Environment /t REG_MULTI_SZ /d 'DOCVAULT_SERVER_URL=http://127.0.0.1:9099\0DOCVAULT_AGENT_PSK=ci-test-psk-123' /f
+          reg query "HKLM\SYSTEM\CurrentControlSet\Services\DocVaultClipAgent" /v Environment
+
+          Write-Host "=== start service ==="
+          net start DocVaultClipAgent
+          Start-Sleep -Seconds 15
+
+          Write-Host "=== sc query ==="
+          sc.exe query DocVaultClipAgent
+
+          Write-Host "=== listener.log ==="
+          $log = ""
+          if (Test-Path listener.log) { $log = Get-Content listener.log -Raw; Write-Host $log } else { Write-Host "(no listener.log)" }
+
+          Write-Host "=== cleanup ==="
+          cmd /c "net stop DocVaultClipAgent" 2>$null | Out-Null
+          .\dvclip.exe uninstall 2>$null | Out-Null
+          if ($listener) { Stop-Process -Id $listener.Id -Force -ErrorAction SilentlyContinue }
+
+          Write-Host "================ VERDICT ================"
+          $pass = $true
+          if ($log -match "port=9099 method=POST path=/api/enroll") {
+            Write-Host "PASS: service read DOCVAULT_SERVER_URL from registry Environment (enroll hit 127.0.0.1:9099/api/enroll)"
+          } elseif ($log -match "port=8080") {
+            Write-Host "FAIL: service used the DEFAULT url :8080 - registry Environment was NOT read"; $pass = $false
+          } else {
+            Write-Host "FAIL: no enroll request seen - service did not connect at all"; $pass = $false
+          }
+          if ($log -match "psk=ci-test-psk-123") {
+            Write-Host "PASS: service read DOCVAULT_AGENT_PSK from registry Environment (X-Agent-PSK header present)"
+          } else {
+            Write-Host "FAIL: PSK not read / not sent in header"; $pass = $false
+          }
+          if (-not $pass) { throw "one-click installer mechanism test FAILED" }
+          Write-Host "ALL CHECKS PASSED - the one-click installer mechanism works on real Windows"
