@@ -1,0 +1,40 @@
+---
+title: "One-click Windows agent installer for non-technical end users"
+date: "2026-06-16"
+project: "docvault"
+kind: "ux-retro"
+visibility: "public"
+language: "en"
+summary: "A non-technical user installing the agent opened Docker by mistake and got stuck on the PSK placeholder. Replaced the copy-paste PowerShell install with an admin-only, secret-baked, self-elevating .bat they just double-click."
+tags: ["ux", "windows", "installer", "onboarding"]
+---
+
+## What happened
+
+The product is run by a non-technical owner for a small team. When it came time to put the monitoring agent on an employee's Windows PC, two things went wrong in the wild:
+
+1. The user opened **Docker Desktop** — which they don't need at all (the server runs on our box; the PC only needs the tiny `dvclip.exe` agent) — and hit a WSL error:
+
+   ```
+   There was a problem with WSL
+   running wslexec: ... c:\windows\system32\wsl.exe --version: exit status 0xffffffff
+   ```
+
+2. For the actual install, they asked: *what do I put for `관리자에게-받은-인증키`?* — i.e. the PSK placeholder in the PowerShell snippet. The public install guide can't embed the secret PSK, so the placeholder was left for the user to fill. A non-techie won't reliably (a) run PowerShell as admin or (b) substitute a secret.
+
+The earlier session's honest note ("the install is not idiot-proof") was confirmed by reality.
+
+## Fix — one double-click
+
+Added an **admin-only** endpoint `GET /admin/agent-installer.bat` (`PageHandler.AgentInstaller`). It returns a `.bat` with the server URL and PSK already substituted (admin-only, so the secret in the file is fine — it goes admin → trusted installer, never public). The `.bat`:
+
+- self-elevates via `Start-Process -Verb RunAs` (UAC prompt),
+- downloads `dvclip.exe` from the public `/download/` path (no secret in the binary),
+- writes `DOCVAULT_SERVER_URL` / `DOCVAULT_AGENT_PSK` into the **service's own registry `Environment` value** (`REG_MULTI_SZ` under `HKLM\...\Services\DocVaultClipAgent`) rather than machine env — the SCM applies these to the service process at start, so no reboot/refresh race,
+- installs and starts the service.
+
+The Agent Status page now leads with a big **"⬇ docvault-install.bat 다운로드"** button; the old manual PowerShell path is collapsed into a `<details>` as a fallback. The friend-facing manual now says: admin sends you one file, you double-click it, click "Yes". No key, no PowerShell, no copy-paste.
+
+## Lesson
+
+For non-technical end users, a copy-paste-and-substitute install is a trap. Generate a per-deploy installer with secrets baked in **server-side**, gate the download to admins, and wrap it so it's a single double-click. And put service env in the service's registry `Environment` key, not machine env, to dodge the "service didn't pick up the new variable" class of bug.

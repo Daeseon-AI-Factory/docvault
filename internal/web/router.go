@@ -202,6 +202,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Get("/admin/alerts", deps.PageHandler.AdminAlertsPage)
 			r.Get("/admin/agents", deps.PageHandler.AdminAgentsPage)
 			r.Post("/admin/agents/assign", deps.FormHandler.AssignAgent)
+			r.Get("/admin/agent-installer.bat", deps.PageHandler.AgentInstaller)
 			r.Post("/admin/users/create", deps.FormHandler.CreateUser)
 			r.Post("/admin/users/import", deps.FormHandler.ImportUsers)
 			r.Post("/admin/alerts/rules/create", deps.FormHandler.CreateAlertRule)

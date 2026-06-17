@@ -909,6 +909,52 @@ func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, h.tc, "admin_agents.html", data)
 }
 
+// installBatTemplate is a one-click Windows installer. __SERVER__/__PSK__ are
+// substituted per-request. It self-elevates, downloads the agent, bakes the
+// server URL + PSK into the service's own registry Environment (so the service
+// reliably sees them without a reboot), installs and starts the service.
+const installBatTemplate = "@echo off\n" +
+	"chcp 65001 >nul\n" +
+	"net session >nul 2>&1\n" +
+	"if %errorLevel% neq 0 (\n" +
+	"  echo 관리자 권한이 필요합니다. 권한 요청 창에서 [예]를 눌러주세요...\n" +
+	"  powershell -Command \"Start-Process -FilePath '%~f0' -Verb RunAs\"\n" +
+	"  exit /b\n" +
+	")\n" +
+	"echo.\n" +
+	"echo  DocVault 보안 에이전트를 설치합니다. 잠시만 기다려주세요...\n" +
+	"echo.\n" +
+	"if not exist \"C:\\DocVault\" mkdir \"C:\\DocVault\"\n" +
+	"powershell -ExecutionPolicy Bypass -NoProfile -Command \"Invoke-WebRequest -Uri '__SERVER__/download/dvclip-windows-amd64.exe' -OutFile 'C:\\DocVault\\dvclip.exe'; Unblock-File 'C:\\DocVault\\dvclip.exe'\"\n" +
+	"\"C:\\DocVault\\dvclip.exe\" install\n" +
+	"reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Services\\DocVaultClipAgent\" /v Environment /t REG_MULTI_SZ /d \"DOCVAULT_SERVER_URL=__SERVER__\\0DOCVAULT_AGENT_PSK=__PSK__\" /f >nul\n" +
+	"net start DocVaultClipAgent\n" +
+	"echo.\n" +
+	"echo  ============================================\n" +
+	"echo   설치 완료! 이 창을 닫으셔도 됩니다.\n" +
+	"echo  ============================================\n" +
+	"echo.\n" +
+	"pause\n"
+
+// AgentInstaller (GET /admin/agent-installer.bat) serves a one-click Windows
+// installer with the server URL + PSK baked in. Admin-only (it contains the PSK).
+func (h *PageHandler) AgentInstaller(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+	scheme := "https"
+	if xfp := r.Header.Get("X-Forwarded-Proto"); xfp != "" {
+		scheme = xfp
+	}
+	serverURL := scheme + "://" + r.Host
+	bat := strings.ReplaceAll(installBatTemplate, "__SERVER__", serverURL)
+	bat = strings.ReplaceAll(bat, "__PSK__", h.agentPSK)
+	bat = strings.ReplaceAll(bat, "\n", "\r\n")
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="docvault-install.bat"`)
+	_, _ = w.Write([]byte(bat))
+}
+
 func (h *PageHandler) EventsSearchPage(w http.ResponseWriter, r *http.Request) {
 	filter := struct {
 		UserID    int64
