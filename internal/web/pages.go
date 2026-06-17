@@ -909,6 +909,17 @@ func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, h.tc, "admin_agents.html", data)
 }
 
+// InstallPage (GET /admin/install) renders an in-app install page: the one-click
+// download button plus the step-by-step visual guide, all inside the web app so
+// the admin can reach everything from the navigation in one place.
+func (h *PageHandler) InstallPage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+	data := h.pageData(r, "에이전트 설치", "admin-install")
+	renderPage(w, h.tc, "admin_install.html", data)
+}
+
 // installBatTemplate is a one-click Windows installer. __SERVER__/__PSK__ are
 // substituted per-request. It self-elevates, downloads the agent, bakes the
 // server URL + PSK into the service's own registry Environment (so the service

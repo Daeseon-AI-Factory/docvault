@@ -25,6 +25,7 @@
         <li><a href="/admin/users" {{if eq .Active "admin-users"}}class="active"{{end}}>Users</a></li>
         <li><a href="/admin/alerts" {{if eq .Active "admin-alerts"}}class="active"{{end}}>Alerts</a></li>
         <li><a href="/admin/agents" {{if eq .Active "admin-agents"}}class="active"{{end}}>Agent Status</a></li>
+        <li><a href="/admin/install" {{if eq .Active "admin-install"}}class="active"{{end}}>📥 Install Agent</a></li>
         <li><a href="/admin/monitoring" {{if eq .Active "admin-monitoring"}}class="active"{{end}}>Monitoring Config</a></li>
         {{end}}
 
@@ -57,7 +58,7 @@
     var DICT={
       "Dashboard":"대시보드","Files":"파일","File":"파일","Monitoring":"모니터링",
       "Endpoint Events":"엔드포인트 이벤트","Audit Logs":"감사 로그","Admin":"관리자",
-      "Users":"사용자","Alerts":"알림","Agent Status":"에이전트 상태","Monitoring Config":"모니터링 설정",
+      "Users":"사용자","Alerts":"알림","Agent Status":"에이전트 상태","📥 Install Agent":"📥 에이전트 설치","Monitoring Config":"모니터링 설정",
       "Help":"도움말","📘 Setup Guide":"📘 설치 가이드","📖 User Manual":"📖 사용 설명서","Logout":"로그아웃","Signed in as":"로그인 계정:",
       "Total Events":"전체 이벤트","Events Today":"오늘 이벤트","Files Stored":"저장된 파일",
       "Active Alerts":"활성 알림","Recent Activity":"최근 활동","Recent Alerts":"최근 알림",
