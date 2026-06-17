@@ -410,3 +410,25 @@ The Stop hook blocks the turn until the most recent commit is either logged OR e
 - Option B — append the same `<!-- skipped: <hash> <subject> -->` line yourself, then commit. Same effect.
 
 Routine = typo fix, lint fix, formatting commit, dep bump without behavior change, file rename. Anything else: write the entry.
+
+## Guardrails (learned the hard way — DON'T repeat these)
+
+Each rule below exists because it already cost real time. Full story: [content/logs/docvault/2026-06-17-onboarding-retro.mdx](content/logs/docvault/2026-06-17-onboarding-retro.mdx). Follow them.
+
+1. **Verify before claiming "done".** Never report a deliverable as working from intention — paste the proof from THIS turn:
+   - web page/route → `curl -s -o /dev/null -w '%{http_code}'` (+ `grep` a marker string), or a screenshot
+   - deploy → `GET /health` returns `200`
+   - installer / agent behavior → the `windows-latest` CI test (`.github/workflows/win-install-test.yml`)
+   If you didn't run it this turn, say "not verified" — don't announce success.
+
+2. **Know your branch before any git surgery.** Run `git branch --show-current` before commit / checkout / stash. Work lives on `feat/*`; `main` is protected (PR + merge only). Never assume you're on `main`. (A blind `git checkout main` once looked like it ate the whole session's work — it didn't, but only because everything was committed + pushed.)
+
+3. **Commit hash in the log → fill it in a FOLLOW-UP commit, never `--amend`.** Amending after writing a hash into a tracked file changes the hash, making the reference stale. Sequence: commit code → `git rev-parse HEAD` → write that hash into the log → commit the log separately (`[no-log]`).
+
+4. **Confirm the SHAPE of a UX deliverable before building it.** Static page vs in-app route? Who is the actor and what are they allowed to access (e.g. the agent installer is admin-only because it carries the PSK — the end user can't self-download it)? Ask one clarifying question instead of guessing and rebuilding (the install guide got built three times for this reason).
+
+5. **Deploy with `scripts/deploy-box.sh`** — one shot: rsync → build → recreate → `docker builder prune` → verify `/health`. Don't hand-run the steps piecemeal; that caused redeploy churn and filled the box's 10 GB root disk (BuildKit cache). Config lives in `scripts/.deploy.env` (gitignored), never in the repo.
+
+6. **Windows reality:** the agent binary is unsigned, so SmartScreen ALWAYS fires (Run is hidden behind "추가 정보") and `.bat` files are blocked by email — design around both (KakaoTalk/USB delivery, dialog-mockup guide, remote install). The dev Mac is Apple-Silicon, so "real amd64 Windows" testing = CI (`windows-latest`), NOT a local VM.
+
+7. **Scripting:** use `bash` (not `zsh`) for scripted loops and quote every variable — unquoted-var word-splitting silently broke test harnesses here.

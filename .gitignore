@@ -9,6 +9,7 @@ bin/
 # Environment
 .env
 .env.local
+scripts/.deploy.env
 
 # IDE
 .idea/
