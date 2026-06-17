@@ -1,0 +1,34 @@
+---
+title: "One in-app page for agent install (download + visual guide together)"
+date: "2026-06-17"
+project: "docvault"
+kind: "ux-retro"
+visibility: "public"
+language: "en"
+summary: "The installer download and the install guide were scattered (download buried in Agent Status, guide a separate static page in a new tab). Consolidated into a single in-app /admin/install page reachable from the sidebar."
+tags: ["ux", "onboarding", "windows", "navigation"]
+---
+
+## The gap
+
+We had all the install pieces, but not in one place a non-technical operator could find:
+
+- the one-click `.bat` **download** button was inside the Agent Status page, mixed in with the agent list;
+- the **guide** (with the dialog mockups) was a separate static page at `/download/install-windows.ko.html` that opened in a new browser tab.
+
+The operator expected to click one nav item and see everything. They were right.
+
+## Fix (commit `e60a363`)
+
+Added an in-app, admin-only page **`/admin/install`** (`PageHandler.InstallPage` → `templates/admin_install.html`, added to `render.go`'s layout-page list, routed in `router.go`). One page, two sections:
+
+1. **① Download** — the one-click `docvault-install.bat` button, plus how to deliver it (KakaoTalk/USB, the "email blocks .bat" warning, and the remote-install recommendation for non-technical users).
+2. **② What the employee does** — the same step-by-step visual mockups (Security Warning → UAC → SmartScreen "추가 정보 → 실행" → cmd "설치 완료") embedded right in the app.
+
+A sidebar item **"📥 Install Agent / 에이전트 설치"** under Admin links to it. The public `/download/install-windows.ko.html` stays as the forward-to-the-friend version.
+
+Verified live: `/admin/install` → 200 with the download button, the SmartScreen mockup, and the nav link present on the dashboard.
+
+## Lesson
+
+When a flow spans an admin-only secret (the PSK-bearing installer) and public instructions, compose them into one in-app page for the operator instead of scattering the download on a status screen and the guide in an external file. The secret stays admin-gated; the operator gets a single destination.
