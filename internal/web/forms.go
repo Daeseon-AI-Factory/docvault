@@ -1,7 +1,10 @@
 package web
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -9,11 +12,13 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/alert"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/auth"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/endpoint"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/folder"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/vault"
@@ -27,6 +32,7 @@ type FormHandler struct {
 	folderRepo   *folder.Repository
 	userRepo     *user.Repository
 	alertRepo    *alert.Repository
+	endpointRepo *endpoint.Repository
 	logger       *slog.Logger
 }
 
@@ -37,6 +43,7 @@ type FormHandlerDeps struct {
 	FolderRepo   *folder.Repository
 	UserRepo     *user.Repository
 	AlertRepo    *alert.Repository
+	EndpointRepo *endpoint.Repository
 	Logger       *slog.Logger
 }
 
@@ -48,8 +55,122 @@ func NewFormHandler(deps FormHandlerDeps) *FormHandler {
 		folderRepo:   deps.FolderRepo,
 		userRepo:     deps.UserRepo,
 		alertRepo:    deps.AlertRepo,
+		endpointRepo: deps.EndpointRepo,
 		logger:       deps.Logger,
 	}
+}
+
+// AssignAgent (POST /admin/agents/assign) sets the employee for a registered host.
+func (h *FormHandler) AssignAgent(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+	agentID, err := strconv.ParseInt(r.FormValue("agent_id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid agent_id", http.StatusBadRequest)
+		return
+	}
+	var userID *int64
+	if v := r.FormValue("user_id"); v != "" && v != "0" {
+		uid, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid user_id", http.StatusBadRequest)
+			return
+		}
+		userID = &uid
+	}
+	if h.endpointRepo == nil {
+		http.Error(w, "endpoint repo unavailable", http.StatusInternalServerError)
+		return
+	}
+	if err := h.endpointRepo.AssignAgent(r.Context(), agentID, userID); err != nil {
+		h.logger.Error("assign agent", "error", err, "agent_id", agentID)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin/agents", http.StatusSeeOther)
+}
+
+// ImportUsers (POST /admin/users/import) bulk-creates users from a CSV upload.
+// Header row: username,full_name,email,department,role  (only username required).
+// Imported users get a random password — they exist for attribution/management;
+// reset the password via the user page if a person needs to actually log in.
+func (h *FormHandler) ImportUsers(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "no file uploaded", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1
+	records, err := reader.ReadAll()
+	if err != nil {
+		http.Error(w, "invalid CSV", http.StatusBadRequest)
+		return
+	}
+
+	created, skipped := 0, 0
+	for i, rec := range records {
+		col := func(n int) string {
+			if n < len(rec) {
+				return strings.TrimSpace(rec[n])
+			}
+			return ""
+		}
+		username := col(0)
+		if username == "" {
+			continue
+		}
+		if i == 0 && strings.EqualFold(username, "username") {
+			continue // header row
+		}
+		role := user.Role(strings.ToLower(col(4)))
+		if role != user.RoleAdmin && role != user.RoleManager && role != user.RoleEmployee {
+			role = user.RoleEmployee
+		}
+		email := col(2)
+		if email == "" {
+			email = username + "@company.local"
+		}
+		pw, err := randomImportPassword()
+		if err != nil {
+			skipped++
+			continue
+		}
+		hash, err := user.HashPassword(pw)
+		if err != nil {
+			skipped++
+			continue
+		}
+		u := &user.User{
+			Username:     username,
+			Email:        email,
+			FullName:     col(1),
+			Role:         role,
+			Department:   col(3),
+			PasswordHash: hash,
+		}
+		if err := h.userRepo.Create(r.Context(), u); err != nil {
+			skipped++ // usually a duplicate username
+			continue
+		}
+		created++
+	}
+	h.logger.Info("bulk user import", "created", created, "skipped", skipped)
+	http.Redirect(w, r, fmt.Sprintf("/admin/users?imported=%d&skipped=%d", created, skipped), http.StatusSeeOther)
+}
+
+func randomImportPassword() (string, error) {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 func (h *FormHandler) requireAdmin(w http.ResponseWriter, r *http.Request) (*auth.AuthUser, bool) {

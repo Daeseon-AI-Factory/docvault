@@ -166,3 +166,55 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Fix**: Commit 0cf0a5037ad91f60bc8a9c175419448a54311603. internal/insight builds a compact DB digest (event counts, recent notable events, unacked alerts) and calls the Anthropic Messages API via raw net/http to produce a short Korean briefing. Admin-only GET /api/insight/summary, disabled unless DOCVAULT_ANTHROPIC_API_KEY is set; model via DOCVAULT_AI_MODEL.
 - **Commit**: 0cf0a5037ad91f60bc8a9c175419448a54311603
 - **Pattern**: keep paid AI calls optional + admin-gated, and send a pre-aggregated digest rather than raw rows to bound token cost.
+<!-- skipped: f65c361 Log AI summary bot [no-log] -->
+
+## AI bot/agent on Gemini: retired model + thinking-token leak
+
+- **Symptom**: `GET /api/insight/summary` returned 502; container log: `gemini 404: This model models/gemini-2.0-flash is no longer available`. After changing the model the summary text was the model's reasoning scratchpad, truncated (e.g. `". Let's do "위험 수준: 보통"...`).
+- **Cause**: (1) `gemini-2.0-flash` was retired by Google. (2) `gemini-flash-latest` is a thinking model; default thinking consumed the 1024 `maxOutputTokens`, so only the scratchpad came back.
+- **Fix**: Commit cb2e545b4ec0fa89a61a7be5fa51bd169ca20e5a. Default Gemini model = `gemini-flash-latest` (alias auto-tracks the current flash, won't get retired); set `generationConfig.thinkingConfig.thinkingBudget=0` to disable thinking. Verified: real Korean briefing grounded in 354 events.
+- **Commit**: cb2e545b4ec0fa89a61a7be5fa51bd169ca20e5a
+- **Pattern**: pin Gemini to the `*-latest` alias, and set `thinkingBudget=0` for brief/JSON tasks or the answer gets eaten by thinking tokens.
+
+## Root disk hit 100% (build failed) — BuildKit cache on the boot volume
+
+- **Symptom**: `docker build` failed with `no space left on device` (`mkdir /tmp/go-build...`); `df /` showed the 9.8G boot disk 100% used, 0 free. SSH also started timing out.
+- **Cause**: repeated on-box docvault image builds left BuildKit cache under `/var/lib/docker/buildkit` (on the root volume) — separate from the daemon data-root (`/data/docker`, 45G free). Moving data-root does NOT move the BuildKit cache.
+- **Fix**: `docker builder prune -af` reclaimed ~1.2GB → root back to ~58%. Run a prune after each on-box build (ops action, not in a commit).
+- **Pattern**: on a small boot disk, prune builder cache after builds — or build off-box and `docker load` the image so nothing accumulates on root.
+
+## SSH locked out after ISP changed the operator's IP
+
+- **Symptom**: `ssh root@<box>` timed out repeatedly while HTTPS (443) kept working.
+- **Cause**: the ACG inbound rule for port 22 was pinned to one residential IP; the ISP reassigned it. 443 is open to 0.0.0.0/0 so the web stayed up while SSH (restricted) was dropped.
+- **Fix**: re-add the current public IP to ACG 22 via the NCP signed API before each SSH session. Verified by reconnecting.
+- **Pattern**: pinning SSH to a dynamic residential IP is fragile; use a stable jump IP / VPN, or accept re-adding the IP. A web-works-but-SSH-times-out split points at a firewall rule, not the host.
+<!-- skipped: 004859f Harden agent against prompt injection in tool data [no-log] -->
+
+## Non-technical installer confusion: friend installed Docker, choked on the PSK placeholder
+
+- **Symptom**: a non-technical end user, told to install the Windows agent, instead opened **Docker Desktop** (unrelated) which failed with `There was a problem with WSL ... wsl.exe --version: exit status 0xffffffff`. Separately they asked what to put for the install command's `관리자에게-받은-인증키` (PSK) placeholder — i.e. the manual PSK substitution + "run PowerShell as admin" steps were too technical.
+- **Cause**: the only install path was a multi-line PowerShell snippet requiring (1) running PowerShell elevated and (2) hand-substituting the PSK. A non-techie can't reliably do either, and the public install guide can't embed the secret PSK, so the placeholder stayed for the user to fill — a trap.
+- **Fix**: Commit bf2c948bad2182f97c4b8bcde9627885d3558c48. Added an admin-only one-click installer endpoint `GET /admin/agent-installer.bat` (`PageHandler.AgentInstaller` in internal/web/pages.go) that bakes the server URL + PSK into a self-elevating `.bat`: it UAC-elevates, downloads `dvclip.exe`, writes `DOCVAULT_SERVER_URL`/`DOCVAULT_AGENT_PSK` into the **service's own registry `Environment` (REG_MULTI_SZ)** so the service reads them without a reboot, then installs + starts. Added a prominent download button on the Agent Status page (admin_agents.html), moved the manual PowerShell path into a `<details>`, and pointed manual.ko.html at the one-click flow. The friend now just double-clicks one file.
+- **Commit**: bf2c948bad2182f97c4b8bcde9627885d3558c48
+- **Pattern**: for non-technical end users, never ship a copy-paste-and-substitute install. Generate a per-deploy installer with secrets baked in server-side (admin-only download) and use a self-elevating wrapper so it's one double-click. Bake service env into the service's registry `Environment` key, not machine env, to avoid reboot/refresh races.
+- **Verified**: real amd64 Windows (GitHub Actions `windows-latest`, workflow `.github/workflows/win-install-test.yml`, run 27661890975). After `dvclip.exe install` → `reg add ...\DocVaultClipAgent /v Environment /t REG_MULTI_SZ /d "DOCVAULT_SERVER_URL=...\0DOCVAULT_AGENT_PSK=..."` → `net start`, the service reached `STATE: 4 RUNNING` and POSTed `/api/enroll` to the configured URL with header `X-Agent-PSK: <psk>` (listener log: `HIT port=9099 method=POST path=/api/enroll psk=ci-test-psk-123`). So the SCM does apply the per-service `Environment` REG_MULTI_SZ to the process and the Go agent reads both vars via `os.Getenv` with no reboot — the risky claim holds. UAC + SmartScreen clicks remain inherently manual (no automation clicks a secure-desktop prompt); those are covered by the visual guide only.
+<!-- skipped: bbb44f1 Fix commit hash in one-click installer troubleshooting entry [no-log] -->
+
+## Even a one-click .bat trips non-technical users: SmartScreen + email blocks the file
+
+- **Symptom**: after shipping the one-click `.bat`, two real-world blockers remained for a non-technical end user: (1) double-clicking an unsigned downloaded `.bat` triggers an "열린 파일 - 보안 경고", then UAC, then a full-screen **SmartScreen** "Windows의 PC를 보호했습니다" where the **Run button is hidden until you click "추가 정보"** — a non-techie stops here; (2) **`.bat` files are blocked as dangerous by Gmail and some messengers**, so the file may never reach the user.
+- **Cause**: the agent binary is unsigned (no code-signing cert), so SmartScreen always fires; mail providers refuse executable attachments by policy. The prior `/download/install-windows.ko.html` was a text-only PowerShell guide that didn't depict these dialogs.
+- **Fix**: Commit 0988b03bb6e87833e22fd089dcfbbb6363d4b429. Rewrote `internal/web/static/install-windows.ko.html` (served at `/download/install-windows.ko.html`) into a one-click-first visual guide with CSS **mockups of each dialog** (Security Warning / UAC / SmartScreen with the "추가 정보 → 실행" two-step / cmd "설치 완료") showing exactly which button to press; moved the PowerShell path into a `<details>` fallback. The Agent Status card (`admin_agents.html`) now warns that **email blocks `.bat` (use KakaoTalk/USB)**, links the guide to forward to the employee, and recommends **remote install (AnyDesk/TeamViewer)** as the most reliable path for non-technical users.
+- **Commit**: 0988b03bb6e87833e22fd089dcfbbb6363d4b429
+- **Pattern**: an unsigned Windows installer ALWAYS trips SmartScreen — guide users with recognizable dialog mockups and name the exact button, don't just say "click Run". And never deliver a `.bat` by email (silently blocked); use a messenger/USB/link, or remote-install it for non-technical users.
+<!-- skipped: 9338d4e Add Windows install-mechanism end-to-end CI test [no-log] -->
+
+## Install download + guide were not reachable as one in-app page
+
+- **Symptom**: the admin couldn't reach "install" from the web app as a single place. The `.bat` download button lived buried inside the Agent Status page (mixed with the agent list), and the install guide was a separate static page (`/download/install-windows.ko.html`) that opened in a new browser tab — not an in-app page. The operator expected to click one nav item and land on a page with both the download and the instructions.
+- **Cause**: the download (admin-only, PSK-bearing) and the public friend-facing guide were deliberately separate artifacts; there was no in-app page that composed them, and the sidebar only linked the external static guide.
+- **Fix**: Commit e60a363. Added an in-app, admin-only page `GET /admin/install` (`PageHandler.InstallPage` → `templates/admin_install.html`, registered in `render.go` layoutPages) that combines the one-click `.bat` download button + transfer guidance (KakaoTalk/USB, email-blocks-.bat warning, remote-install tip) + the step-by-step visual dialog guide (the same Security Warning / UAC / SmartScreen / cmd-done mockups). Added a sidebar nav item "📥 Install Agent / 에이전트 설치" under Admin (`layout.html` + i18n dict) and the route in `router.go`. Verified live: `/admin/install` returns 200 with the download button, the SmartScreen mockup, and the nav link present on the dashboard.
+- **Commit**: e60a363
+- **Pattern**: when a workflow spans an admin-only secret (the installer) and public instructions, give the operator one in-app page that composes both, rather than scattering the pieces across a status page and an external static file.
+<!-- skipped: 9338d4e Add Windows install-mechanism end-to-end CI test [no-log] -->

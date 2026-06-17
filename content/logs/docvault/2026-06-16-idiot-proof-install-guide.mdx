@@ -1,0 +1,28 @@
+---
+title: "Idiot-proof visual install guide (and why a one-click .bat still isn't enough)"
+date: "2026-06-16"
+project: "docvault"
+kind: "ux-retro"
+visibility: "public"
+language: "en"
+summary: "Shipping a one-click installer wasn't enough for a non-technical user: SmartScreen hides its Run button and email blocks .bat files. Rewrote the install page into a visual, dialog-by-dialog guide and added transfer guidance for the admin."
+tags: ["ux", "windows", "onboarding", "smartscreen"]
+---
+
+## The gap a one-click installer doesn't close
+
+We made the Windows agent install a single double-click (`docvault-install.bat`, secrets baked in). But "one click" assumes the file reaches the user and that Windows lets it run. For a non-technical user, neither is guaranteed:
+
+- **The file gets blocked in transit.** Gmail flatly refuses `.bat` attachments; some messengers warn or strip them. The user may never receive it.
+- **Windows throws three scary dialogs.** An unsigned, internet-downloaded `.bat` produces: an "열린 파일 - 보안 경고", a UAC prompt, and — the killer — a full-screen **SmartScreen** "Windows의 PC를 보호했습니다" whose **Run button is hidden** until you click the small "추가 정보" link first. A non-techie sees "blocked" and stops.
+
+Code-signing would remove SmartScreen, but that needs a paid cert — out of scope for now. So the fix is guidance, not signing.
+
+## What shipped
+
+- **Rewrote `/download/install-windows.ko.html`** into a one-click-first, step-by-step guide with **CSS mockups of each dialog** — Security Warning, UAC, SmartScreen (drawn with the "추가 정보 → 실행" two-step and arrows to the exact button), and the cmd window showing "설치 완료!". A non-techie can pattern-match the screen in front of them to the picture and know which button to press. Big banner up top: *you only need one file — do NOT install Docker/WSL.* PowerShell path collapsed into a `<details>` fallback.
+- **Agent Status card** now tells the admin how to deliver the file: **use KakaoTalk/USB, not email** (email blocks `.bat`), forward the guide link to the employee, and — most reliably for a non-technical user — **install it remotely (AnyDesk/TeamViewer) yourself once.**
+
+## Honest status
+
+The installer file itself is verified (correct URL + PSK, all steps). The `.bat` has still **not been executed on real Windows hardware** — the dialog mockups are drawn from the known Windows UX, not screenshots of this exact run. First real execution will be on the target PC; the guide is built to get a beginner through it, and remote-install remains the safest first-time path.

@@ -1,0 +1,34 @@
+---
+title: "Team management + an AI assistant that acts (with rollback)"
+date: "2026-06-16"
+project: "docvault"
+kind: "update"
+visibility: "public"
+language: "en"
+summary: "Added host→employee assignment, CSV bulk user import, an AI security briefing, and a tool-use AI assistant that can both query live data and perform actions (create user, assign host, ack alert) — every action logged and one-click rollback-able."
+tags: ["ai-agent", "tool-use", "go", "ops"]
+---
+
+Goal: make DocVault operable by a non-technical owner running it for a small team — register people easily, attribute each PC to a person, and ask an AI what's going on (and have it act).
+
+## What shipped (commit `cb2e545`)
+
+- **Host → employee assignment** (Agent Status): each registered agent gets a dropdown to assign an employee; `endpoint_agents.user_id` is set and past `endpoint_events` for that host are back-filled so timelines attribute to the person. Fills the gap where attribution only worked when the OS username happened to equal a DocVault username.
+- **CSV bulk user import** (Users): upload `username,full_name,email,department,role` (only username required); imported users get a random password (they exist for attribution; reset to enable login).
+- **AI security briefing** (`internal/insight`): now provider-agnostic (Anthropic *or* Gemini). A digest of recent events/alerts → a short Korean risk briefing. Dashboard button + admin-only `GET /api/insight/summary`.
+- **AI assistant** (`internal/agent`): a tool-use agent (OpenAI or Gemini function-calling) behind `POST /api/agent/chat`, admin-only, with a dashboard chat box.
+  - **Read tools**: event counts, recent events, alerts, users, hosts.
+  - **Action tools**: `create_user`, `assign_host`, `acknowledge_alert`.
+  - **Rollback**: every mutating action is written to `agent_actions` (migration 015) with the state needed to undo it; `POST /api/agent/rollback` and a dashboard "recent actions" panel give one-click undo.
+- **Korean-default UI** with a 🌐 KO/EN toggle (app `layout.html` + standalone `login.html`), plus a Korean Windows install guide and agent binary downloads.
+
+## Why tool-use, not RAG
+
+The data is structured (events, users, alerts). The assistant queries it through tools (SQL) rather than retrieving documents, which keeps answers grounded in real rows. Adversarial probes held up: it refused a false premise ("admin deleted 500 files?" → "no such record"), didn't invent activity for a nonexistent user, handled vague phrasing, and declined a destructive request. RAG would only be worth adding for document/manual Q&A.
+
+## Honest gaps at time of writing
+
+- Only `create_user → rollback` was verified end-to-end; `assign_host`/`acknowledge_alert` share the mechanism but weren't individually exercised.
+- The agent reads attacker-influenceable fields (file names, window titles from monitored PCs) as tool output → prompt-injection into action tools is an unmitigated risk (rollback limits blast radius but the action still runs first).
+- Windows agent still only build/CI-verified, never run on real hardware.
+- No unit tests for `internal/agent` / `internal/insight` yet; the rest of the suite passes (`go test ./...`).

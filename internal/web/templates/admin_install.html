@@ -1,0 +1,99 @@
+{{define "content"}}
+<style>
+  .inst-hero{background:#eff6ff;border:2px solid #2563eb;border-radius:14px;padding:16px 20px;margin:0 0 14px}
+  .inst-step{display:flex;gap:14px;align-items:flex-start;margin:1rem 0}
+  .inst-num{flex:0 0 32px;height:32px;border-radius:50%;background:#2563eb;color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .inst-warn{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin:10px 0;color:#92400e}
+  .inst-ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 14px;margin:10px 0;color:#166534}
+  .mock{max-width:380px;margin:.6rem 0;border:1px solid #c7ccd1;border-radius:8px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.18);font-size:.86rem;background:#f0f0f0}
+  .mock .bar{background:#e9e9e9;border-bottom:1px solid #d4d4d4;padding:7px 12px;font-weight:600;color:#222}
+  .mock .body{padding:14px 16px;color:#222;background:#fff}
+  .mock .file{display:inline-block;margin-top:8px;padding:4px 8px;background:#f3f4f6;border:1px solid #e2e8f0;border-radius:6px}
+  .mock .btns{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;background:#f0f0f0;border-top:1px solid #e2e8f0}
+  .mock .b{padding:6px 16px;border:1px solid #b9bcc0;border-radius:5px;background:#fafafa;color:#333}
+  .mock .b.hi{background:#2563eb;border-color:#1d4ed8;color:#fff;font-weight:700;box-shadow:0 0 0 3px rgba(37,99,235,.25)}
+  .mock.uac .bar{background:#0b5394;color:#fff}
+  .mock.ss{background:#1f4e79;border-color:#163a5a}
+  .mock.ss .bar{background:#1f4e79;color:#fff;border-bottom:none}
+  .mock.ss .body{background:#1f4e79;color:#e7eef6}
+  .mock.ss .btns{background:#1f4e79;border-top:none}
+  .mock.ss .b{background:#3a6ea5;border-color:#2c5680;color:#fff}
+  .mock.ss .b.hi{background:#fff;color:#1f4e79;border-color:#fff}
+  .mock.cmd{background:#0c0c0c;border-color:#000;max-width:440px}
+  .mock.cmd .bar{background:#1a1a1a;color:#ccc}
+  .mock.cmd .body{background:#0c0c0c;color:#d4ffd4;font-family:Consolas,monospace;white-space:pre-line}
+  .arrow{color:#dc2626;font-weight:800;font-size:.85rem}
+</style>
+
+<div class="card mb-2">
+  <div class="card-header">① 설치파일 다운로드 (관리자용) / Download the installer</div>
+  <div class="inst-hero">
+    <div style="font-weight:800;font-size:1.1rem;margin-bottom:.3rem">🪟 원클릭 설치파일</div>
+    <p class="text-muted" style="margin:.2rem 0 .8rem">서버 주소와 인증키가 <b>이미 들어 있습니다.</b> 받아서 직원에게 보내면, 직원은 <b>더블클릭만</b> 하면 됩니다.</p>
+    <a href="/admin/agent-installer.bat" class="btn btn-primary" download="docvault-install.bat" style="font-size:1.05rem">⬇ docvault-install.bat 다운로드</a>
+  </div>
+  <p><b>직원에게 보내는 법 (3단계)</b></p>
+  <ol>
+    <li>위 버튼으로 <code>docvault-install.bat</code> 다운로드</li>
+    <li>직원에게 <b>카톡 “파일 보내기” 또는 USB</b>로 전달 <span style="color:#b45309">(⚠️ <b>이메일은 .bat를 막아요</b> — 카톡/USB 권장)</span></li>
+    <li>아래 <b>②번 안내</b>를 직원에게 보여주거나, <a href="/download/install-windows.ko.html" target="_blank">공개 설치 가이드 링크</a>를 함께 보내기</li>
+  </ol>
+  <div class="inst-warn">💡 <b>제일 확실한 방법:</b> 직원이 컴퓨터에 익숙하지 않다면, 첫 설치는 <b>원격(AnyDesk·팀뷰어)으로 직접</b> 깔아주세요. 한 번만 깔면 끝입니다.</div>
+</div>
+
+<div class="card">
+  <div class="card-header">② 직원이 할 일 — 이 화면 그대로 따라하면 됩니다 / What the employee does</div>
+
+  <div class="inst-step"><div class="inst-num">1</div><div>
+    받은 <code>docvault-install.bat</code> 파일을 <b>바탕화면</b>에 저장.
+  </div></div>
+  <div class="inst-step"><div class="inst-num">2</div><div>
+    그 파일을 <b>마우스로 빠르게 두 번 클릭(더블클릭)</b>.
+  </div></div>
+
+  <p style="font-weight:700;margin-top:1.2rem">그러면 경고창이 차례로 뜹니다 — 당황 말고 이대로만 누르세요 👇</p>
+
+  <div class="inst-step"><div class="inst-num">3</div><div>
+    <b>“보안 경고” 창</b> → <b>[실행]</b>
+    <div class="mock">
+      <div class="bar">열린 파일 - 보안 경고</div>
+      <div class="body">이 파일을 실행하시겠습니까?<div class="file">📄 docvault-install.bat</div></div>
+      <div class="btns"><span class="b hi">실행 ←여기</span><span class="b">취소</span></div>
+    </div>
+  </div></div>
+
+  <div class="inst-step"><div class="inst-num">4</div><div>
+    <b>파란 “변경 허용” 창</b> → <b>[예]</b>
+    <div class="mock uac">
+      <div class="bar">사용자 계정 컨트롤</div>
+      <div class="body">이 앱이 디바이스를 변경할 수 있도록 허용하시겠어요?</div>
+      <div class="btns"><span class="b hi">예 ←여기</span><span class="b">아니요</span></div>
+    </div>
+  </div></div>
+
+  <div class="inst-step"><div class="inst-num">5</div><div>
+    <b>“Windows의 PC를 보호했습니다” (파란 화면)</b> → 작은 글씨 <b>[추가 정보]</b>를 누르면 → 아래에 <b>[실행]</b> 버튼이 새로 생깁니다 → 그걸 누르세요.
+    <div class="mock ss">
+      <div class="bar">Windows의 PC를 보호했습니다</div>
+      <div class="body">Microsoft Defender SmartScreen에서 인식할 수 없는 앱의 시작을 막았습니다.<br><br><u>추가 정보</u> <span class="arrow">← ① 먼저 이걸</span></div>
+      <div class="btns"><span class="b hi">실행 <span class="arrow">← ② 이게 생겨요</span></span><span class="b">실행 안 함</span></div>
+    </div>
+    <span class="text-muted">※ 외부 서명을 안 받은 사내 프로그램이라 뜨는 정상 경고예요. 안전합니다.</span>
+  </div></div>
+
+  <div class="inst-step"><div class="inst-num">6</div><div>
+    <b>검은 창</b>이 잠깐 뜨고 <b>“설치 완료!”</b>가 보이면 <b>끝!</b> 창을 닫으면 됩니다.
+    <div class="mock cmd">
+      <div class="bar">C:\Windows\System32\cmd.exe</div>
+      <div class="body"> DocVault 보안 에이전트를 설치합니다...
+ ============================================
+   설치 완료! 이 창을 닫으셔도 됩니다.
+ ============================================</div>
+    </div>
+  </div></div>
+
+  <div class="inst-ok">✅ 끝! 컴퓨터를 껐다 켜도 자동으로 다시 시작됩니다. 설치되면 이 직원 PC가 <a href="/admin/agents">에이전트 상태</a>에 자동으로 표시됩니다 → 그 PC를 직원에게 배정하세요.</div>
+  <div class="inst-warn">❓ 중간에 막히거나 다른 창이 뜨면 — 그 <b>화면을 캡처해서 관리자</b>에게 보내라고 하세요.</div>
+  <p class="text-muted">전문가용 수동 설치(PowerShell)는 <a href="/download/install-windows.ko.html" target="_blank">공개 설치 가이드</a> 하단의 “전문가용” 항목을 참고하세요.</p>
+</div>
+{{end}}

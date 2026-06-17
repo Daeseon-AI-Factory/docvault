@@ -10,6 +10,10 @@
 <body>
   <div class="login-page">
     <div class="login-box">
+      <div style="text-align:right;margin-bottom:.5rem;">
+        <button type="button" id="langToggle" data-i18n-skip
+          style="background:transparent;border:1px solid #cbd5e1;color:#64748b;border-radius:6px;padding:3px 10px;font-size:.75rem;cursor:pointer;">🌐 English</button>
+      </div>
       <h1>DocVault</h1>
       {{if .Error}}
       <div class="alert alert-danger">{{.Error}}</div>
@@ -28,5 +32,32 @@
       </form>
     </div>
   </div>
+  <script>
+  (function(){
+    var DICT={"Username":"사용자명","Password":"비밀번호","Sign In":"로그인",
+      "Invalid username or password":"사용자명 또는 비밀번호가 올바르지 않습니다",
+      "Invalid credentials":"인증 정보가 올바르지 않습니다",
+      "Too many attempts. Please try again later.":"시도가 너무 많습니다. 잠시 후 다시 시도하세요."};
+    function apply(lang){
+      var all=document.querySelectorAll('*');
+      for(var i=0;i<all.length;i++){
+        var el=all[i];
+        if(el.children.length||el.hasAttribute('data-i18n-skip'))continue;
+        var orig=el.getAttribute('data-i18n-o'); if(orig===null)orig=el.textContent;
+        var key=orig.trim(); if(!DICT[key])continue;
+        if(el.getAttribute('data-i18n-o')===null)el.setAttribute('data-i18n-o',orig);
+        el.textContent=(lang==='ko')?orig.replace(key,DICT[key]):orig;
+      }
+      document.title=(lang==='ko')?'로그인 - DocVault':'Login - DocVault';
+    }
+    function cur(){try{return localStorage.getItem('dvlang')||'ko';}catch(e){return 'ko';}}
+    function setLang(l){try{localStorage.setItem('dvlang',l);}catch(e){}document.documentElement.lang=l;apply(l);var b=document.getElementById('langToggle');if(b)b.textContent=(l==='ko')?'🌐 English':'🌐 한국어';}
+    document.addEventListener('DOMContentLoaded',function(){
+      setLang(cur());
+      var b=document.getElementById('langToggle');
+      if(b)b.addEventListener('click',function(){setLang(cur()==='ko'?'en':'ko');});
+    });
+  })();
+  </script>
 </body>
 </html>

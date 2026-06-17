@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/agent"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/alert"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/audit"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/auth"
@@ -37,6 +38,7 @@ type RouterDeps struct {
 	FormHandler     *FormHandler
 	SSEHub          *SSEHub
 	InsightHandler  *insight.Handler
+	AgentHandler    *agent.Handler
 	Logger          *slog.Logger
 }
 
@@ -56,6 +58,9 @@ func NewRouter(deps RouterDeps) http.Handler {
 
 	// Static files
 	r.Handle("/static/*", http.StripPrefix("/static/", staticHandler()))
+
+	// Agent binary downloads (binaries hold no secrets; URL/PSK are supplied at install time)
+	r.Handle("/download/*", http.StripPrefix("/download/", http.FileServer(http.Dir("/vault/agents"))))
 
 	// Health check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -156,6 +161,13 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.With(auth.RequireRole("admin")).Get("/api/insight/summary", deps.InsightHandler.Summary)
 		}
 
+		// AI assistant chat + action history/rollback (admin-only)
+		if deps.AgentHandler != nil {
+			r.With(auth.RequireRole("admin")).Post("/api/agent/chat", deps.AgentHandler.Chat)
+			r.With(auth.RequireRole("admin")).Get("/api/agent/actions", deps.AgentHandler.Actions)
+			r.With(auth.RequireRole("admin")).Post("/api/agent/rollback", deps.AgentHandler.Rollback)
+		}
+
 		// Alert routes
 		r.Get("/api/alerts", deps.AlertHandler.ListAlerts)
 		r.Post("/api/alerts/{alertID}/acknowledge", deps.AlertHandler.Acknowledge)
@@ -189,7 +201,11 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Get("/admin/users", deps.PageHandler.AdminUsersPage)
 			r.Get("/admin/alerts", deps.PageHandler.AdminAlertsPage)
 			r.Get("/admin/agents", deps.PageHandler.AdminAgentsPage)
+			r.Get("/admin/install", deps.PageHandler.InstallPage)
+			r.Post("/admin/agents/assign", deps.FormHandler.AssignAgent)
+			r.Get("/admin/agent-installer.bat", deps.PageHandler.AgentInstaller)
 			r.Post("/admin/users/create", deps.FormHandler.CreateUser)
+			r.Post("/admin/users/import", deps.FormHandler.ImportUsers)
 			r.Post("/admin/alerts/rules/create", deps.FormHandler.CreateAlertRule)
 			r.Post("/admin/alerts/{alertID}/acknowledge", deps.FormHandler.AcknowledgeAlert)
 			r.Get("/admin/users/{userID}/edit", deps.PageHandler.AdminUserEditPage)
