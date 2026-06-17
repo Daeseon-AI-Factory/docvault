@@ -3,81 +3,148 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DocVault 에이전트 설치 안내 (Windows)</title>
+<title>DocVault 설치 안내 (윈도우) — 1분이면 끝</title>
 <style>
-  body{margin:0;background:#f1f5f9;color:#0f172a;line-height:1.7;
+  body{margin:0;background:#f1f5f9;color:#0f172a;line-height:1.75;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif}
-  .wrap{max-width:760px;margin:0 auto;padding:28px 20px 80px}
-  h1{font-size:1.5rem;margin:.2rem 0 .4rem}
-  h2{font-size:1.15rem;margin:1.6rem 0 .5rem;border-bottom:2px solid #e2e8f0;padding-bottom:.3rem}
-  .lead{color:#475569}
-  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px 20px;margin:14px 0;box-shadow:0 1px 2px rgba(0,0,0,.04)}
-  .warn{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin:10px 0;color:#92400e}
-  .ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;margin:10px 0;color:#166534}
-  pre{background:#0b1220;color:#e2e8f0;padding:14px;border-radius:8px;overflow:auto;font-size:.86rem;line-height:1.6}
+  .wrap{max-width:760px;margin:0 auto;padding:26px 20px 90px}
+  h1{font-size:1.6rem;margin:.2rem 0 .3rem}
+  h2{font-size:1.2rem;margin:1.8rem 0 .6rem}
+  .lead{color:#475569;font-size:1.05rem}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px 22px;margin:14px 0;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .big{background:#eff6ff;border:2px solid #2563eb;border-radius:14px;padding:16px 22px;margin:16px 0}
+  .warn{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;margin:12px 0;color:#92400e}
+  .ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 16px;margin:12px 0;color:#166534}
+  .step{display:flex;gap:14px;align-items:flex-start;margin:1rem 0}
+  .num{flex:0 0 34px;height:34px;border-radius:50%;background:#2563eb;color:#fff;font-weight:800;font-size:1.1rem;display:flex;align-items:center;justify-content:center}
+  .step b{color:#0f172a}
   code{font-family:"SF Mono",Consolas,Menlo,monospace}
-  :not(pre)>code{background:#e2e8f0;border-radius:4px;padding:1px 6px;font-size:.85em}
-  ol li,ul li{margin:.5rem 0}
-  .step{font-weight:700;color:#2563eb}
-  .btn{display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:700;margin:6px 0}
+  :not(pre)>code{background:#e2e8f0;border-radius:5px;padding:2px 7px;font-size:.9em}
+  pre{background:#0b1220;color:#e2e8f0;padding:14px;border-radius:8px;overflow:auto;font-size:.84rem;line-height:1.6}
   .key{color:#f59e0b;font-weight:700}
+  details{margin-top:10px}
+  summary{cursor:pointer;font-weight:600;color:#475569}
+
+  /* fake Windows dialog mockups */
+  .mock{max-width:380px;margin:.7rem 0;border:1px solid #c7ccd1;border-radius:8px;overflow:hidden;
+    box-shadow:0 6px 20px rgba(0,0,0,.18);font-size:.86rem;background:#f0f0f0}
+  .mock .bar{background:#e9e9e9;border-bottom:1px solid #d4d4d4;padding:7px 12px;font-weight:600;color:#222}
+  .mock .body{padding:14px 16px;color:#222;background:#fff}
+  .mock .file{display:inline-block;margin-top:8px;padding:4px 8px;background:#f3f4f6;border:1px solid #e2e8f0;border-radius:6px}
+  .mock .btns{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;background:#f0f0f0;border-top:1px solid #e2e8f0}
+  .mock .b{padding:6px 16px;border:1px solid #b9bcc0;border-radius:5px;background:#fafafa;color:#333}
+  .mock .b.hi{background:#2563eb;border-color:#1d4ed8;color:#fff;font-weight:700;box-shadow:0 0 0 3px rgba(37,99,235,.25)}
+  /* UAC = blue header */
+  .mock.uac .bar{background:#0b5394;color:#fff;border-bottom-color:#094a82}
+  /* SmartScreen = blue */
+  .mock.ss{background:#1f4e79;border-color:#163a5a}
+  .mock.ss .bar{background:#1f4e79;color:#fff;border-bottom:none;font-size:1rem}
+  .mock.ss .body{background:#1f4e79;color:#e7eef6}
+  .mock.ss .body u{cursor:pointer}
+  .mock.ss .btns{background:#1f4e79;border-top:none}
+  .mock.ss .b{background:#3a6ea5;border-color:#2c5680;color:#fff}
+  .mock.ss .b.hi{background:#fff;color:#1f4e79;border-color:#fff}
+  .arrow{color:#dc2626;font-weight:800;font-size:.85rem}
+  .mock.cmd{background:#0c0c0c;border-color:#000;max-width:440px}
+  .mock.cmd .bar{background:#1a1a1a;color:#ccc}
+  .mock.cmd .body{background:#0c0c0c;color:#d4ffd4;font-family:Consolas,monospace;white-space:pre-line}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>🛡️ DocVault 모니터링 에이전트 설치 (Windows)</h1>
-  <p class="lead">이 PC의 문서 활동(복사·USB 반출·외부 전송 등)을 회사 보안 서버로 보내는 작은 프로그램을 설치합니다. 약 5분이면 끝납니다.</p>
+  <h1>🛡️ DocVault 설치 (윈도우)</h1>
+  <p class="lead">관리자가 보내준 <b>파일 하나를 더블클릭</b>만 하면 끝납니다. 1분이면 돼요. 화면에 뜨는 그대로 보여드릴 테니 천천히 따라오세요.</p>
 
-  <div class="warn">⚠️ <b>회사 소유 PC에서, 회사 정책과 본인 동의 하에만</b> 설치하세요. 개인 PC나 몰래 감시 용도로는 사용하지 않습니다.</div>
+  <div class="big">
+    <div style="font-weight:800;font-size:1.15rem;margin-bottom:.3rem">📌 딱 하나만 기억하세요</div>
+    필요한 건 <code>docvault-install.bat</code> <b>파일 하나뿐</b>입니다.<br>
+    <b>Docker·WSL 같은 건 절대 깔지 마세요.</b> 그런 거 필요 없어요. (혹시 깔았다면 그냥 닫으면 됩니다.)
+  </div>
 
   <div class="card">
-    <h2>설치 — 명령 한 번이면 끝</h2>
-    <ol>
-      <li><span class="step">PowerShell을 관리자 권한으로 열기</span><br>
-        시작 버튼 → <code>powershell</code> 입력 → <b>Windows PowerShell</b> 에서 <b>마우스 우클릭</b> → <b>관리자 권한으로 실행</b> → "예" 클릭</li>
+    <div class="step"><div class="num">1</div><div>
+      <b>관리자가 보내준 <code>docvault-install.bat</code> 파일을 받으세요.</b><br>
+      카톡이나 USB로 받은 파일을 <b>바탕화면</b>에 저장하면 찾기 쉬워요.
+    </div></div>
+    <div class="step"><div class="num">2</div><div>
+      그 파일을 <b>마우스로 빠르게 두 번 클릭(더블클릭)</b> 하세요.
+    </div></div>
+  </div>
 
-      <li><span class="step">아래 내용을 통째로 복사해 붙여넣고 Enter</span>
-        <pre><code>mkdir C:\DocVault -Force
+  <h2>그러면 경고창이 차례로 뜹니다 — 당황 말고 이대로만 누르세요 👇</h2>
+
+  <div class="card">
+    <div class="step"><div class="num">3</div><div>
+      <b>"보안 경고" 창</b>이 뜨면 → <b>[실행]</b>을 누르세요.
+      <div class="mock">
+        <div class="bar">열린 파일 - 보안 경고</div>
+        <div class="body">이 파일을 실행하시겠습니까?
+          <div class="file">📄 docvault-install.bat</div>
+        </div>
+        <div class="btns"><span class="b hi">실행 ←여기</span><span class="b">취소</span></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <div class="step"><div class="num">4</div><div>
+      <b>파란색 "변경 허용" 창</b>이 뜨면 → <b>[예]</b>를 누르세요.
+      <div class="mock uac">
+        <div class="bar">사용자 계정 컨트롤</div>
+        <div class="body">이 앱이 디바이스를 변경할 수 있도록 허용하시겠어요?<br>
+          <span style="color:#555;font-size:.85em">Windows 명령 처리기</span></div>
+        <div class="btns"><span class="b hi">예 ←여기</span><span class="b">아니요</span></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <div class="step"><div class="num">5</div><div>
+      <b>"Windows의 PC를 보호했습니다" (파란 화면)</b>이 뜨면 →
+      먼저 작은 글씨 <b>[추가 정보]</b>를 누르세요. 그러면 아래에 <b>[실행]</b> 버튼이 <u>새로 생깁니다</u> → 그걸 누르세요.
+      <div class="mock ss">
+        <div class="bar">Windows의 PC를 보호했습니다</div>
+        <div class="body">Microsoft Defender SmartScreen에서 인식할 수 없는 앱의 시작을 막았습니다.<br><br>
+          <u>추가 정보</u> &nbsp;<span class="arrow">← ① 먼저 이걸 누르면</span></div>
+        <div class="btns"><span class="b hi">실행 <span class="arrow" style="color:#dc2626">← ② 이게 생겨요</span></span><span class="b">실행 안 함</span></div>
+      </div>
+      <span style="color:#64748b;font-size:.9em">※ 외부 서명을 안 받은 사내 프로그램이라 뜨는 정상 경고예요. 안전합니다.</span>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <div class="step"><div class="num">6</div><div>
+      <b>검은 창</b>이 잠깐 뜨고, 마지막에 <b>"설치 완료!"</b>가 보이면 <b>끝!</b> 창을 닫으면 됩니다.
+      <div class="mock cmd">
+        <div class="bar">C:\Windows\System32\cmd.exe</div>
+        <div class="body"> DocVault 보안 에이전트를 설치합니다...
+ ============================================
+   설치 완료! 이 창을 닫으셔도 됩니다.
+ ============================================</div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="ok">✅ 이제 아무것도 안 해도 됩니다. 컴퓨터를 껐다 켜도 <b>자동으로 다시 시작</b>돼요. 진짜 끝!</div>
+  <div class="warn">❓ 중간에 막히거나 위와 <b>다른 창</b>이 뜨면 — 그 <b>화면을 사진(캡처)으로 찍어서 관리자에게</b> 보내세요. 그러면 됩니다.</div>
+
+  <div class="card">
+    <details>
+      <summary>🛠️ 전문가용 — 수동 설치 (위 방법이 안 될 때만)</summary>
+      <p style="margin-top:10px">PowerShell을 <b>관리자 권한</b>으로 열고(시작 → <code>powershell</code> 입력 → 우클릭 → 관리자 권한으로 실행), 관리자가 준 <b>인증키</b>를 넣어 아래를 붙여넣으세요:</p>
+      <pre><code>mkdir C:\DocVault -Force
 Invoke-WebRequest -Uri "https://docvault.daeseon.ai/download/dvclip-windows-amd64.exe" -OutFile "C:\DocVault\dvclip.exe"
 Unblock-File C:\DocVault\dvclip.exe
 setx /M DOCVAULT_SERVER_URL "https://docvault.daeseon.ai"
 setx /M DOCVAULT_AGENT_PSK "<span class="key">관리자에게-받은-인증키</span>"
 C:\DocVault\dvclip.exe install
 net start DocVaultClipAgent</code></pre>
-        <div class="warn">🔑 <span class="key">관리자에게-받은-인증키</span> 부분은 <b>관리자가 따로 알려준 값</b>으로 반드시 바꿔주세요.</div>
-      </li>
-
-      <li><span class="step">파란 경고창이 뜨면 "추가 정보 → 실행"</span><br>
-        <b>"Windows의 PC를 보호했습니다"</b> 창이 뜰 수 있습니다 → <b>"추가 정보"</b> 클릭 → <b>"실행"</b> 클릭.<br>
-        <span style="color:#64748b">(정상입니다 — 외부 서명을 받지 않은 사내 프로그램이라 그렇습니다. 안전합니다.)</span></li>
-    </ol>
+      <div class="warn">🔑 <span class="key">관리자에게-받은-인증키</span> 부분은 관리자가 알려준 값으로 바꾸세요. (원클릭 .bat에는 이미 들어 있어 안 바꿔도 됩니다.)</div>
+      <p>제거: <code>net stop DocVaultClipAgent</code> 후 <code>C:\DocVault\dvclip.exe uninstall</code></p>
+    </details>
   </div>
 
-  <div class="card">
-    <h2>잘 설치됐는지 확인</h2>
-    <p>마지막에 <code>...서비스를 시작했습니다</code> 또는 <code>service was started successfully</code> 가 보이면 끝입니다. ✅</p>
-    <div class="ok">확인 명령: <code>Get-Service DocVaultClipAgent</code> → 상태가 <b>Running</b> 이면 정상 작동 중입니다.</div>
-    <p>설치 후엔 PC가 켜질 때 <b>자동으로 시작</b>되고, 꺼졌다 켜져도 알아서 다시 돕니다.</p>
-  </div>
-
-  <div class="card">
-    <h2>제거 (필요할 때)</h2>
-    <p>관리자 PowerShell에서:</p>
-    <pre><code>net stop DocVaultClipAgent
-C:\DocVault\dvclip.exe uninstall</code></pre>
-  </div>
-
-  <div class="card">
-    <h2>문제가 생기면</h2>
-    <ul>
-      <li><b>"이 시스템에서 스크립트를 실행할 수 없습니다" 오류</b> → 먼저 <code>Set-ExecutionPolicy -Scope Process Bypass -Force</code> 입력 후 다시 시도.</li>
-      <li><b>다운로드 실패</b> → 인터넷 연결과 <code>https://docvault.daeseon.ai</code> 접속을 확인.</li>
-      <li><b>"net start" 오류</b> → 잠시 후 <code>net start DocVaultClipAgent</code> 다시 실행.</li>
-      <li>그래도 안 되면 화면을 캡처해서 관리자에게 보내세요.</li>
-    </ul>
-  </div>
-
-  <p style="text-align:center;color:#94a3b8;font-size:.85rem;margin-top:30px">DocVault · 내부 활동 모니터링 · 회사 동의 기반 운영</p>
+  <p style="text-align:center;color:#94a3b8;font-size:.85rem;margin-top:24px">DocVault · 내부 활동 모니터링 · 회사 소유 PC + 본인 동의 하에만 운영</p>
 </div>
 </body>
 </html>
