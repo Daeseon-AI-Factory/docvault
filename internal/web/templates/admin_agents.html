@@ -50,6 +50,7 @@
           <td>{{.EventCount}}</td>
           <td>
             <form method="POST" action="/admin/agents/assign" style="display:flex;gap:6px;align-items:center;">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <input type="hidden" name="agent_id" value="{{.ID}}">
               <select name="user_id" class="form-control" style="max-width:220px;">
                 <option value="0">— 미지정 —</option>

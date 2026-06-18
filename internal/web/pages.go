@@ -958,9 +958,10 @@ func (h *PageHandler) InstallPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // installBatTemplate is a one-click Windows installer. __SERVER__/__PSK__ are
-// substituted per-request. It self-elevates, downloads the agent, bakes the
-// server URL + PSK into the service's own registry Environment (so the service
-// reliably sees them without a reboot), installs and starts the service.
+// substituted per-request. It self-elevates, downloads the agent, removes the
+// old service-mode install if present, and registers a per-user hidden logon
+// task. Clipboard APIs are session-scoped on Windows, so the monitor must run
+// in the interactive user's session rather than as a LocalSystem service.
 const installBatTemplate = "@echo off\n" +
 	"chcp 65001 >nul\n" +
 	"net session >nul 2>&1\n" +
@@ -972,11 +973,30 @@ const installBatTemplate = "@echo off\n" +
 	"echo.\n" +
 	"echo  DocVault 보안 에이전트를 설치합니다. 잠시만 기다려주세요...\n" +
 	"echo.\n" +
-	"if not exist \"C:\\DocVault\" mkdir \"C:\\DocVault\"\n" +
+	"set \"INSTALL_DIR=C:\\DocVault\"\n" +
+	"set \"RUN_CMD=C:\\DocVault\\run-docvault-agent.cmd\"\n" +
+	"set \"RUN_VBS=C:\\DocVault\\run-docvault-agent.vbs\"\n" +
+	"if not exist \"%INSTALL_DIR%\" mkdir \"%INSTALL_DIR%\"\n" +
 	"powershell -ExecutionPolicy Bypass -NoProfile -Command \"Invoke-WebRequest -Uri '__SERVER__/download/dvclip-windows-amd64.exe' -OutFile 'C:\\DocVault\\dvclip.exe'; Unblock-File 'C:\\DocVault\\dvclip.exe'\"\n" +
-	"\"C:\\DocVault\\dvclip.exe\" install\n" +
-	"reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Services\\DocVaultClipAgent\" /v Environment /t REG_MULTI_SZ /d \"DOCVAULT_SERVER_URL=__SERVER__\\0DOCVAULT_AGENT_PSK=__PSK__\" /f >nul\n" +
-	"net start DocVaultClipAgent\n" +
+	"echo 기존 서비스 방식 설치를 정리합니다...\n" +
+	"net stop DocVaultClipAgent >nul 2>&1\n" +
+	"\"C:\\DocVault\\dvclip.exe\" uninstall >nul 2>&1\n" +
+	"(\n" +
+	"  echo @echo off\n" +
+	"  echo set \"DOCVAULT_SERVER_URL=__SERVER__\"\n" +
+	"  echo set \"DOCVAULT_AGENT_PSK=__PSK__\"\n" +
+	"  echo :loop\n" +
+	"  echo \"C:\\DocVault\\dvclip.exe\"\n" +
+	"  echo timeout /t 5 /nobreak ^>nul\n" +
+	"  echo goto loop\n" +
+	") > \"%RUN_CMD%\"\n" +
+	"(\n" +
+	"  echo Set WshShell = CreateObject(\"WScript.Shell\")\n" +
+	"  echo WshShell.Run \"cmd.exe /c \"\"%RUN_CMD%\"\"\", 0, False\n" +
+	") > \"%RUN_VBS%\"\n" +
+	"schtasks /Delete /TN \"DocVaultClipAgent\" /F >nul 2>&1\n" +
+	"schtasks /Create /TN \"DocVaultClipAgent\" /SC ONLOGON /TR \"wscript.exe C:\\DocVault\\run-docvault-agent.vbs\" /RL LIMITED /F\n" +
+	"schtasks /Run /TN \"DocVaultClipAgent\"\n" +
 	"echo.\n" +
 	"echo  ============================================\n" +
 	"echo   설치 완료! 이 창을 닫으셔도 됩니다.\n" +

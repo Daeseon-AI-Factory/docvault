@@ -11,6 +11,7 @@
     <span class="text-muted">예: <code>kim.cs,김철수,kim@company.kr,영업,employee</code></span>
   </p>
   <form method="POST" action="/admin/users/import" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:center;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <input type="file" name="file" accept=".csv,text/csv" required class="form-control" style="max-width:360px;">
     <button type="submit" class="btn btn-primary">업로드 &amp; 등록</button>
   </form>
