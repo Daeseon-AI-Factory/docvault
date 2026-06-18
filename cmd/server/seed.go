@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -62,8 +63,22 @@ func seedAdmin(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) err
 	if err := seedAlertRules(ctx, pool, logger); err != nil {
 		return fmt.Errorf("seed alert rules: %w", err)
 	}
+	if truthy(os.Getenv("DOCVAULT_DEMO_SEED")) {
+		if err := seedDemoData(ctx, pool, logger); err != nil {
+			return fmt.Errorf("seed demo data: %w", err)
+		}
+	}
 
 	return nil
+}
+
+func truthy(v string) bool {
+	switch v {
+	case "1", "true", "TRUE", "yes", "YES", "on", "ON":
+		return true
+	default:
+		return false
+	}
 }
 
 type seedRule struct {
@@ -184,6 +199,214 @@ func seedAlertRules(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger
 		logger.Info("seeded alert rule", "name", r.Name, "severity", r.Severity)
 	}
 
+	return nil
+}
+
+func seedDemoData(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) error {
+	password := os.Getenv("DOCVAULT_DEMO_USER_PASSWORD")
+	if password == "" {
+		password = "demo-user-password-not-for-admin"
+	}
+	hash, err := user.HashPassword(password)
+	if err != nil {
+		return fmt.Errorf("hash demo user password: %w", err)
+	}
+
+	type demoUser struct {
+		username   string
+		email      string
+		fullName   string
+		department string
+	}
+	demoUsers := []demoUser{
+		{"alice.kim", "alice.kim@demo.docvault.local", "Alice Kim", "Finance"},
+		{"ben.park", "ben.park@demo.docvault.local", "Ben Park", "Engineering"},
+		{"maria.choi", "maria.choi@demo.docvault.local", "Maria Choi", "Sales"},
+	}
+
+	userIDs := map[string]int64{}
+	for _, u := range demoUsers {
+		var id int64
+		err := pool.QueryRow(ctx,
+			`INSERT INTO users (username, email, password_hash, full_name, role, department)
+			 VALUES ($1, $2, $3, $4, 'employee', $5)
+			 ON CONFLICT (username) DO UPDATE
+			 SET email = EXCLUDED.email,
+			     full_name = EXCLUDED.full_name,
+			     department = EXCLUDED.department,
+			     updated_at = NOW()
+			 RETURNING id`,
+			u.username, u.email, hash, u.fullName, u.department,
+		).Scan(&id)
+		if err != nil {
+			return fmt.Errorf("upsert demo user %s: %w", u.username, err)
+		}
+		userIDs[u.username] = id
+	}
+
+	now := time.Now()
+	trueValue := true
+	falseValue := false
+	type demoAgent struct {
+		hostname       string
+		source         string
+		username       string
+		userID         any
+		ip             string
+		lastCheckin    time.Time
+		health         string
+		clipboardOK    any
+		clipboardError string
+		lastSelfTest   any
+		lastClipboard  any
+		runningMode    string
+		sessionUser    string
+	}
+	agents := []demoAgent{
+		{
+			hostname: "DEMO-FIN-01", source: "clipboard", username: "DEMO-FIN-01\\alice",
+			userID: userIDs["alice.kim"], ip: "10.10.20.14", lastCheckin: now.Add(-2 * time.Minute),
+			health: "capture_ok", clipboardOK: trueValue, lastSelfTest: now.Add(-3 * time.Minute),
+			lastClipboard: now.Add(-90 * time.Second), runningMode: "interactive_user", sessionUser: "alice",
+		},
+		{
+			hostname: "DEMO-ENG-07", source: "clipboard", username: "DEMO-ENG-07\\ben",
+			userID: userIDs["ben.park"], ip: "10.10.30.27", lastCheckin: now.Add(-4 * time.Minute),
+			health: "capture_waiting", clipboardOK: trueValue, lastSelfTest: now.Add(-4 * time.Minute),
+			runningMode: "interactive_user", sessionUser: "ben",
+		},
+		{
+			hostname: "DEMO-UNASSIGNED-02", source: "clipboard", username: "DEMO-UNASSIGNED-02\\temp",
+			userID: nil, ip: "10.10.40.33", lastCheckin: now.Add(-5 * time.Minute),
+			health: "capture_waiting", clipboardOK: trueValue, lastSelfTest: now.Add(-5 * time.Minute),
+			runningMode: "interactive_user", sessionUser: "temp",
+		},
+		{
+			hostname: "DEMO-SALES-03", source: "clipboard", username: "DEMO-SALES-03\\maria",
+			userID: userIDs["maria.choi"], ip: "10.10.50.19", lastCheckin: now.Add(-47 * time.Minute),
+			health: "capture_ok", clipboardOK: trueValue, lastSelfTest: now.Add(-48 * time.Minute),
+			lastClipboard: now.Add(-49 * time.Minute), runningMode: "interactive_user", sessionUser: "maria",
+		},
+		{
+			hostname: "DEMO-LEGACY-01", source: "clipboard", username: "DEMO-LEGACY-01$",
+			userID: userIDs["ben.park"], ip: "10.10.30.91", lastCheckin: now.Add(-8 * time.Minute),
+			health: "problem", clipboardOK: falseValue, clipboardError: "Agent is running outside the interactive user session",
+			lastSelfTest: now.Add(-8 * time.Minute), runningMode: "windows_service", sessionUser: "LocalSystem",
+		},
+	}
+
+	for _, a := range agents {
+		_, err := pool.Exec(ctx,
+			`INSERT INTO endpoint_agents
+			   (hostname, source, user_id, reported_username, last_ip, is_active, last_checkin,
+			    enrolled_at, agent_version, running_mode, session_username, health_status,
+			    clipboard_available, clipboard_error, last_self_test_at, last_clipboard_event_at)
+			 VALUES ($1, $2, $3, $4, $5, true, $6, $6, 'demo', $7, $8, $9, $10, $11, $12, $13)
+			 ON CONFLICT (hostname, source) DO UPDATE
+			 SET user_id = EXCLUDED.user_id,
+			     reported_username = EXCLUDED.reported_username,
+			     last_ip = EXCLUDED.last_ip,
+			     is_active = true,
+			     last_checkin = EXCLUDED.last_checkin,
+			     agent_version = EXCLUDED.agent_version,
+			     running_mode = EXCLUDED.running_mode,
+			     session_username = EXCLUDED.session_username,
+			     health_status = EXCLUDED.health_status,
+			     clipboard_available = EXCLUDED.clipboard_available,
+			     clipboard_error = EXCLUDED.clipboard_error,
+			     last_self_test_at = EXCLUDED.last_self_test_at,
+			     last_clipboard_event_at = EXCLUDED.last_clipboard_event_at`,
+			a.hostname, a.source, a.userID, a.username, a.ip, a.lastCheckin,
+			a.runningMode, a.sessionUser, a.health, a.clipboardOK, a.clipboardError,
+			a.lastSelfTest, a.lastClipboard,
+		)
+		if err != nil {
+			return fmt.Errorf("upsert demo agent %s: %w", a.hostname, err)
+		}
+	}
+
+	var eventCount int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM endpoint_events WHERE hostname LIKE 'DEMO-%'`).Scan(&eventCount); err != nil {
+		return fmt.Errorf("count demo events: %w", err)
+	}
+	if eventCount == 0 {
+		type demoEvent struct {
+			userID      any
+			hostname    string
+			eventType   string
+			fileName    string
+			filePath    string
+			processName string
+			source      string
+			eventTime   time.Time
+			detail      string
+		}
+		events := []demoEvent{
+			{userIDs["alice.kim"], "DEMO-FIN-01", "clipboard_copy", "customer-pricing.xlsx", "C:\\Users\\alice\\Documents\\customer-pricing.xlsx", "EXCEL.EXE", "clipboard", now.Add(-90 * time.Second), `{"content_size":18420,"window":"Microsoft Excel"}`},
+			{userIDs["ben.park"], "DEMO-ENG-07", "usb_copy", "prototype-v3.step", "E:\\prototype-v3.step", "explorer.exe", "osquery", now.Add(-18 * time.Minute), `{"drive":"E:","device":"USB Mass Storage"}`},
+			{userIDs["maria.choi"], "DEMO-SALES-03", "cloud_upload", "partner-contract.pdf", "C:\\Users\\maria\\Downloads\\partner-contract.pdf", "chrome.exe", "osquery", now.Add(-53 * time.Minute), `{"site":"drive.google.com","confidence":"demo"}`},
+			{userIDs["ben.park"], "DEMO-LEGACY-01", "screen_capture", "", "", "SnippingTool.exe", "osquery", now.Add(-75 * time.Minute), `{"tool":"Snipping Tool"}`},
+			{nil, "DEMO-UNASSIGNED-02", "clipboard_copy", "unknown-text", "", "notepad.exe", "clipboard", now.Add(-2 * time.Hour), `{"content_size":512,"note":"unassigned demo host"}`},
+		}
+		for _, e := range events {
+			_, err := pool.Exec(ctx,
+				`INSERT INTO endpoint_events
+				   (user_id, hostname, event_type, file_name, file_path, process_name, detail, source, event_time)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)`,
+				e.userID, e.hostname, e.eventType, e.fileName, e.filePath, e.processName, e.detail, e.source, e.eventTime,
+			)
+			if err != nil {
+				return fmt.Errorf("insert demo event %s/%s: %w", e.hostname, e.eventType, err)
+			}
+		}
+	}
+
+	var adminID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM users WHERE username = 'admin'`).Scan(&adminID); err != nil {
+		return fmt.Errorf("find admin for demo seed: %w", err)
+	}
+	var ruleID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM alert_rules ORDER BY id LIMIT 1`).Scan(&ruleID); err != nil {
+		return fmt.Errorf("find alert rule for demo seed: %w", err)
+	}
+	alerts := []struct {
+		userID   any
+		severity string
+		message  string
+		detail   string
+	}{
+		{userIDs["alice.kim"], "medium", "Demo: large clipboard copy from customer-pricing.xlsx", `{"hostname":"DEMO-FIN-01","portfolio_demo":true}`},
+		{userIDs["ben.park"], "high", "Demo: engineering file copied to removable USB drive", `{"hostname":"DEMO-ENG-07","portfolio_demo":true}`},
+		{nil, "medium", "Demo: unassigned PC is reporting activity", `{"hostname":"DEMO-UNASSIGNED-02","portfolio_demo":true}`},
+	}
+	for _, a := range alerts {
+		var exists int
+		if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM alerts WHERE message = $1`, a.message).Scan(&exists); err != nil {
+			return fmt.Errorf("check demo alert: %w", err)
+		}
+		if exists > 0 {
+			continue
+		}
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO alerts (rule_id, user_id, severity, message, detail, is_acknowledged, created_at)
+			 VALUES ($1, $2, $3, $4, $5::jsonb, false, NOW())`,
+			ruleID, a.userID, a.severity, a.message, a.detail,
+		); err != nil {
+			return fmt.Errorf("insert demo alert: %w", err)
+		}
+	}
+
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO audit_logs (user_id, action, target_type, target_name, detail, ip_address, user_agent, status_code, created_at)
+		 SELECT $1, 'demo_seed', 'portfolio', 'DocVault demo data',
+		        '{"portfolio_demo":true}'::jsonb, '127.0.0.1', 'seed', 200, NOW()
+		 WHERE NOT EXISTS (SELECT 1 FROM audit_logs WHERE action = 'demo_seed' AND target_name = 'DocVault demo data')`,
+		adminID,
+	); err != nil {
+		return fmt.Errorf("insert demo audit log: %w", err)
+	}
+
+	logger.Info("seeded portfolio demo data")
 	return nil
 }
 

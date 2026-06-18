@@ -1,0 +1,25 @@
+# Example external Caddy vhost for the isolated portfolio demo.
+# Use this in the host-level reverse proxy, not inside docker-compose.demo.yml.
+#
+# DNS:
+#   demo-docvault.example.com -> this server
+#
+# Demo app:
+#   docker-compose.demo.yml publishes server on 127.0.0.1:18080 by default.
+
+demo-docvault.example.com {
+	encode gzip
+
+	request_body {
+		max_size 550MB
+	}
+
+	reverse_proxy 127.0.0.1:18080
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}

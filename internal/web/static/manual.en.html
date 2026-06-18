@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DocVault User Manual</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827;background:#f3f4f6}
+body{margin:0;padding:24px}
+main{max-width:900px;margin:0 auto;background:#fff;border:1px solid #d1d5db;border-radius:12px;padding:24px;box-shadow:0 16px 42px rgba(15,23,42,.12)}
+h1{font-size:1.9rem;margin:.1rem 0 .4rem}
+h2{margin-top:1.4rem}
+p,li{line-height:1.65}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.card{border:1px solid #e5e7eb;border-radius:8px;padding:14px;background:#f8fafc}
+.note{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;color:#1e40af}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+  <h1>DocVault user manual</h1>
+  <p class="note">This English version is suitable for portfolio demos. Use a separate demo database/server so real customer or friend data never mixes with sample data.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Dashboard</h2>
+      <p>Shows total activity, risky events, AI briefing, and the Windows onboarding queue: unassigned PCs, capture-unverified PCs, offline PCs, and active install links.</p>
+    </div>
+    <div class="card">
+      <h2>Install Agent</h2>
+      <p>Create one-time Windows install links for employees. The employee only sees a download button and Windows confirmation steps.</p>
+    </div>
+    <div class="card">
+      <h2>Agent Status</h2>
+      <p>Verify heartbeat, session user, running mode, self-test result, and last real clipboard capture event.</p>
+    </div>
+    <div class="card">
+      <h2>Endpoint Events</h2>
+      <p>Search file, USB, cloud upload, messenger, screenshot, and clipboard events collected from enrolled PCs.</p>
+    </div>
+  </div>
+
+  <h2>Safe demo setup</h2>
+  <ul>
+    <li>Run the portfolio demo with <code>docker-compose.demo.yml</code>.</li>
+    <li>Use <code>DOCVAULT_DEFAULT_LANG=en</code> and <code>DOCVAULT_DEMO_SEED=true</code>.</li>
+    <li>Expose the demo through a separate domain or port from the production/friend instance.</li>
+    <li>Never import real production data into the demo database.</li>
+  </ul>
+</main>
+</body>
+</html>

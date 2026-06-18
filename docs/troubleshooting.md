@@ -267,3 +267,10 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Cause**: installer generation was admin-only and not tied to a user. `endpoint_agents` tracked liveness (`last_checkin`) but not install-token provenance, running mode, self-test time, clipboard API availability, or the last real clipboard event.
 - **Fix**: Added migration `018_windows_onboarding`. `/admin/install` now creates one-time employee install links backed by hashed `install_tokens`; public `/install/{token}` serves a Windows-only employee page and `/install/{token}/download` generates the `.bat` with `DOCVAULT_INSTALL_TOKEN` injected while keeping PSK hidden from the page. The clipagent now posts `/api/agent/self-test` plus the token in enroll/heartbeat/clipboard payloads. Token-backed enroll/self-test auto-assigns the hostname to the selected user. `/admin/agents` and the dashboard show health states: unassigned, offline, capture waiting, capture OK, problem, and service-account suspicion.
 - **Pattern**: onboarding state needs to be first-class product data, not a support checklist. Store the install link, host mapping, self-test result, and real capture evidence so the admin can see "installed" vs "capture verified" without manual searches.
+
+## Portfolio demo must not share the friend/product database
+
+- **Symptom**: the same product instance was being considered for a public English portfolio demo, which would risk mixing sample data with a real user's server/DB.
+- **Cause**: there was no first-class demo stack or English-default runtime mode.
+- **Fix**: Added `DOCVAULT_DEFAULT_LANG`, `DOCVAULT_INSTANCE_LABEL`, English install/manual pages, and `docker-compose.demo.yml` with its own project name, Postgres volume, vault volume, local port, and optional `DOCVAULT_DEMO_SEED=true` sample data. Added `scripts/deploy-demo-box.sh` and an external Caddy vhost example; demo secrets reuse the existing `scripts/gen-env.sh` flow and live in ignored `.env.demo`.
+- **Pattern**: portfolio demos should be isolated infrastructure, not a flag on a real customer's database.

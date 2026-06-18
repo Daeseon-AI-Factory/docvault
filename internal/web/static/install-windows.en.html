@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DocVault Windows Install Guide</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827;background:#f3f4f6}
+body{margin:0;padding:24px}
+main{max-width:860px;margin:0 auto;background:#fff;border:1px solid #d1d5db;border-radius:12px;padding:24px;box-shadow:0 16px 42px rgba(15,23,42,.12)}
+h1{font-size:1.9rem;margin:.1rem 0 .4rem}
+h2{margin-top:1.4rem}
+p,li{line-height:1.65}
+.note{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;color:#1e40af}
+.warn{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;color:#92400e}
+.step{border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;background:#f8fafc;margin:.65rem 0}
+code{background:#eef2ff;border-radius:5px;padding:2px 5px}
+</style>
+</head>
+<body>
+<main>
+  <h1>DocVault Windows install</h1>
+  <p class="note">For normal employees, installation is link-first: open the one-time link from your administrator, download <code>docvault-install.bat</code>, and run it. The page does not show the PSK, server URL, Docker, WSL, or PowerShell commands.</p>
+
+  <h2>Employee steps</h2>
+  <div class="step"><b>1.</b> Open the install link sent by the administrator.</div>
+  <div class="step"><b>2.</b> Click <b>Download docvault-install.bat</b>.</div>
+  <div class="step"><b>3.</b> Save the file to the Desktop, then double-click it.</div>
+  <div class="step"><b>4.</b> If Windows asks for confirmation, click <b>Run</b>, <b>Yes</b>, or <b>More info -> Run anyway</b>.</div>
+  <div class="step"><b>5.</b> When the black window says installation is complete, close it.</div>
+
+  <h2>Admin verification</h2>
+  <ul>
+    <li>Open <b>Admin -> Install Agent</b> to create one-time employee links.</li>
+    <li>Open <b>Admin -> Agent Status</b> to confirm the PC is reporting.</li>
+    <li>Ask the employee to copy any text with Ctrl+C; the PC should move to <b>capture verified</b>.</li>
+    <li>Unassigned, offline, problem, and capture-unverified PCs are visible on the dashboard.</li>
+  </ul>
+
+  <p class="warn">Use DocVault only on company-owned devices with employee consent. Unsigned Windows installers may trigger SmartScreen until code signing is configured.</p>
+</main>
+</body>
+</html>

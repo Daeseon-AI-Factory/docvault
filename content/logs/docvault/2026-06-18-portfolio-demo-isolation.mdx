@@ -1,0 +1,32 @@
+# Portfolio demo isolation and English-first runtime
+
+## Problem
+
+DocVault now needs to serve two audiences:
+
+- a real product/friend instance that should stay Korean-first and contain real operational data;
+- an English portfolio demo that can be shown publicly with seeded sample activity.
+
+Using the same database for both would mix sample data with real user data and make screenshots
+dangerous to share.
+
+## Decision
+
+Add a separate demo runtime instead of a "demo flag" on the product instance.
+
+- `DOCVAULT_DEFAULT_LANG=en` opens the web UI in English.
+- `DOCVAULT_INSTANCE_LABEL=Portfolio Demo` labels the instance in the sidebar/login page.
+- `DOCVAULT_DEMO_SEED=true` seeds sample employees, agents, alerts, endpoint events, and onboarding health.
+- `docker-compose.demo.yml` overrides the normal local compose stack with project name `docvault-demo`, separate Postgres/vault volumes, and port `127.0.0.1:18080`.
+- `.env.demo` is gitignored and created by reusing `scripts/gen-env.sh`, then appending demo-only settings.
+- `scripts/deploy-demo-box.sh` deploys the demo to a separate source directory.
+
+## Result
+
+The portfolio demo can run as a real DocVault server with a real DB and realistic sample telemetry,
+without touching the friend/product database.
+
+## Remaining operational step
+
+For a public demo URL on the same server, put a host-level Caddy/Nginx vhost in front of
+`127.0.0.1:18080`; `deploy/caddy/demo-site.Caddyfile` is the example snippet.

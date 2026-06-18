@@ -6,7 +6,7 @@ ALTER TABLE endpoint_agents
     DROP COLUMN IF EXISTS clipboard_error,
     DROP COLUMN IF EXISTS clipboard_available,
     DROP COLUMN IF EXISTS health_status,
-    DROP COLUMN IF EXISTS session_user,
+    DROP COLUMN IF EXISTS session_username,
     DROP COLUMN IF EXISTS running_mode,
     DROP COLUMN IF EXISTS agent_version,
     DROP COLUMN IF EXISTS install_token_id;

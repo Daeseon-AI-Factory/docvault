@@ -8,8 +8,10 @@ bin/
 
 # Environment
 .env
+.env.demo
 .env.local
 scripts/.deploy.env
+scripts/.deploy-demo.env
 
 # IDE
 .idea/

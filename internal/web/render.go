@@ -151,7 +151,7 @@ func downloadHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, "/")
 		switch name {
-		case "install-windows.ko.html", "manual.ko.html":
+		case "install-windows.ko.html", "install-windows.en.html", "manual.ko.html", "manual.en.html":
 			w.Header().Set("Cache-Control", "no-store")
 			http.ServeFileFS(w, r, staticFS, "static/"+name)
 		default:

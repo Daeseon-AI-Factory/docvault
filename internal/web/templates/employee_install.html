@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DocVault 설치</title>
+  <title>DocVault Install</title>
   <style>
     :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827;background:#f3f4f6}
     body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
@@ -18,28 +18,54 @@
     .warn{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;color:#92400e}
     .bad{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;color:#991b1b}
     code{background:#eef2ff;padding:2px 5px;border-radius:5px}
+    .lang{display:flex;justify-content:flex-end;margin-bottom:8px}
+    .lang button{border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;padding:5px 10px;cursor:pointer}
   </style>
 </head>
 <body>
 <main>
+  <div class="lang"><button type="button" id="langToggle">English</button></div>
   {{if .Valid}}
-    <h1>DocVault Windows 설치</h1>
-    {{if .FullName}}<p class="muted">{{.FullName}} 님 PC에 설치하는 링크입니다.</p>{{end}}
-    <p>아래 버튼으로 설치 파일을 받은 뒤 실행하세요. 설치 파일 안에 필요한 설정이 이미 들어 있습니다.</p>
-    <p><a class="btn" href="{{.DownloadURL}}" download="docvault-install.bat">docvault-install.bat 다운로드</a></p>
+    <h1 data-i18n-ko="DocVault Windows 설치" data-i18n-en="Install DocVault for Windows">DocVault Windows 설치</h1>
+    {{if .FullName}}<p class="muted"><span>{{.FullName}}</span> <span data-i18n-ko="님 PC에 설치하는 링크입니다." data-i18n-en="is the assigned employee for this PC install.">님 PC에 설치하는 링크입니다.</span></p>{{end}}
+    <p data-i18n-ko="아래 버튼으로 설치 파일을 받은 뒤 실행하세요. 설치 파일 안에 필요한 설정이 이미 들어 있습니다." data-i18n-en="Download the installer below, then run it. All required settings are already inside the file.">아래 버튼으로 설치 파일을 받은 뒤 실행하세요. 설치 파일 안에 필요한 설정이 이미 들어 있습니다.</p>
+    <p><a class="btn" href="{{.DownloadURL}}" download="docvault-install.bat" data-i18n-ko="docvault-install.bat 다운로드" data-i18n-en="Download docvault-install.bat">docvault-install.bat 다운로드</a></p>
     <div class="steps">
-      <div class="step"><b>1.</b> 받은 <code>docvault-install.bat</code> 파일을 바탕화면에 저장합니다.</div>
-      <div class="step"><b>2.</b> 파일을 더블클릭합니다.</div>
-      <div class="step"><b>3.</b> 경고창이 뜨면 <b>실행</b>, <b>예</b>, <b>추가 정보</b>, <b>실행</b> 순서로 누릅니다.</div>
-      <div class="step"><b>4.</b> 검은 창에 <b>설치 완료</b>가 보이면 끝입니다.</div>
+      <div class="step" data-i18n-ko="1. 받은 docvault-install.bat 파일을 바탕화면에 저장합니다." data-i18n-en="1. Save the downloaded docvault-install.bat file to the Desktop."><b>1.</b> 받은 <code>docvault-install.bat</code> 파일을 바탕화면에 저장합니다.</div>
+      <div class="step" data-i18n-ko="2. 파일을 더블클릭합니다." data-i18n-en="2. Double-click the file."><b>2.</b> 파일을 더블클릭합니다.</div>
+      <div class="step" data-i18n-ko="3. Windows 경고가 나오면 실행, 예, 추가 정보, 실행 순서로 누릅니다." data-i18n-en="3. If Windows warnings appear, choose Run, Yes, More info, then Run anyway."><b>3.</b> 경고창이 뜨면 <b>실행</b>, <b>예</b>, <b>추가 정보</b>, <b>실행</b> 순서로 누릅니다.</div>
+      <div class="step" data-i18n-ko="4. 검은 창에 설치 완료가 보이면 끝입니다." data-i18n-en="4. When the black window says installation is complete, you are done."><b>4.</b> 검은 창에 <b>설치 완료</b>가 보이면 끝입니다.</div>
     </div>
-    <div class="warn">막히는 화면이 나오면 그 화면을 캡처해서 관리자에게 보내주세요.</div>
-    <p class="muted">이 링크는 한 번 설치에 쓰면 재사용할 수 없습니다. 만료되면 관리자에게 새 링크를 요청하세요.</p>
+    <div class="warn" data-i18n-ko="막히는 화면이 나오면 그 화면을 캡처해서 관리자에게 보내주세요." data-i18n-en="If you get stuck on any screen, take a screenshot and send it to your administrator.">막히는 화면이 나오면 그 화면을 캡처해서 관리자에게 보내주세요.</div>
+    <p class="muted" data-i18n-ko="이 링크는 한 번 설치에 쓰면 재사용할 수 없습니다. 만료되면 관리자에게 새 링크를 요청하세요." data-i18n-en="This link can be used for one installation only. If it expires, ask your administrator for a new link.">이 링크는 한 번 설치에 쓰면 재사용할 수 없습니다. 만료되면 관리자에게 새 링크를 요청하세요.</p>
   {{else}}
-    <h1>설치 링크를 사용할 수 없습니다</h1>
-    <div class="bad">이 링크는 만료됐거나 이미 사용됐습니다. 관리자에게 새 설치 링크를 요청하세요.</div>
+    <h1 data-i18n-ko="설치 링크를 사용할 수 없습니다" data-i18n-en="Install link unavailable">설치 링크를 사용할 수 없습니다</h1>
+    <div class="bad" data-i18n-ko="이 링크는 만료됐거나 이미 사용됐습니다. 관리자에게 새 설치 링크를 요청하세요." data-i18n-en="This link has expired or has already been used. Ask your administrator for a new install link.">이 링크는 만료됐거나 이미 사용됐습니다. 관리자에게 새 설치 링크를 요청하세요.</div>
   {{end}}
 </main>
+<script>
+(function(){
+  var DEFAULT_LANG="{{.DefaultLang}}";
+  function requestedLang(){try{var l=(new URLSearchParams(location.search)).get('lang');return(l==='en'||l==='ko')?l:'';}catch(e){return '';}}
+  function cur(){try{return localStorage.getItem('dvlang')||requestedLang()||DEFAULT_LANG||'ko';}catch(e){return DEFAULT_LANG||'ko';}}
+  function setLang(lang){
+    try{localStorage.setItem('dvlang',lang);}catch(e){}
+    document.documentElement.lang=lang;
+    document.querySelectorAll('[data-i18n-en],[data-i18n-ko]').forEach(function(el){
+      var v=el.getAttribute(lang==='ko'?'data-i18n-ko':'data-i18n-en');
+      if(v!==null) el.textContent=v;
+    });
+    document.title=(lang==='ko')?'DocVault 설치':'DocVault Install';
+    var b=document.getElementById('langToggle');
+    if(b)b.textContent=(lang==='ko')?'English':'한국어';
+  }
+  document.addEventListener('DOMContentLoaded',function(){
+    setLang(requestedLang()||cur());
+    var b=document.getElementById('langToggle');
+    if(b)b.addEventListener('click',function(){setLang(cur()==='ko'?'en':'ko');});
+  });
+})();
+</script>
 </body>
 </html>
 {{end}}
