@@ -92,3 +92,10 @@ func looksLikeFilePaths(content string) bool {
 	}
 	return pathCount > 0 && pathCount == len(lines)
 }
+
+func clipboardProbe() (bool, string) {
+	if _, err := exec.Command("pbpaste").Output(); err != nil {
+		return false, err.Error()
+	}
+	return true, ""
+}

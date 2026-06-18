@@ -1,4 +1,4 @@
-.PHONY: build run migrate seed test test-race vet clean clipagent precheck test-all ci
+.PHONY: build run migrate seed test test-race vet clean clipagent sign-windows precheck test-all ci
 
 # Build
 build:
@@ -6,6 +6,15 @@ build:
 
 clipagent:
 	GOOS=windows GOARCH=amd64 go build -o bin/docvault-clip.exe ./cmd/clipagent
+
+sign-windows: clipagent
+	@if [ -z "$$DOCVAULT_WINDOWS_CERT_PATH" ] || [ -z "$$DOCVAULT_WINDOWS_CERT_PASSWORD" ]; then \
+		echo "Set DOCVAULT_WINDOWS_CERT_PATH and DOCVAULT_WINDOWS_CERT_PASSWORD before signing."; \
+		exit 1; \
+	fi
+	@echo "Sign bin/docvault-clip.exe on a Windows runner with signtool.exe."
+	@echo "Example:"
+	@echo "  signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f %DOCVAULT_WINDOWS_CERT_PATH% /p <redacted> bin\\docvault-clip.exe"
 
 clipagent-mac:
 	GOOS=darwin GOARCH=amd64 go build -o bin/docvault-clip-mac ./cmd/clipagent

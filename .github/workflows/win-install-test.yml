@@ -94,6 +94,7 @@ jobs:
               '@echo off',
               'set "DOCVAULT_SERVER_URL=http://127.0.0.1:9099"',
               'set "DOCVAULT_AGENT_PSK=ci-test-psk-123"',
+              'set "DOCVAULT_INSTALL_TOKEN=ci-install-token-123"',
               ':loop',
               '"C:\DocVault\dvclip.exe"',
               'timeout /t 5 /nobreak >nul',
@@ -116,7 +117,7 @@ jobs:
             $clipText = "docvault-ci-clipboard-$([guid]::NewGuid())"
             Set-Clipboard -Value $clipText
 
-            Write-Host "=== wait for enroll + heartbeat + clipboard event ==="
+            Write-Host "=== wait for enroll + heartbeat + self-test + clipboard event ==="
             $deadline = (Get-Date).AddSeconds(40)
             $log = ""
             do {
@@ -124,7 +125,7 @@ jobs:
               if (Test-Path listener.log) {
                 $log = Get-Content listener.log -Raw
               }
-              if (($log -match "path=/api/enroll") -and ($log -match "path=/api/heartbeat") -and ($log -match "path=/api/events/clipboard")) {
+              if (($log -match "path=/api/enroll") -and ($log -match "path=/api/heartbeat") -and ($log -match "path=/api/agent/self-test") -and ($log -match "path=/api/events/clipboard")) {
                 break
               }
             } while ((Get-Date) -lt $deadline)
@@ -144,6 +145,11 @@ jobs:
             } else {
               Write-Host "FAIL: no heartbeat request seen"; $pass = $false
             }
+            if ($log -match "port=9099 method=POST path=/api/agent/self-test") {
+              Write-Host "PASS: Scheduled Task agent posted /api/agent/self-test"
+            } else {
+              Write-Host "FAIL: no self-test request seen"; $pass = $false
+            }
             if ($log -match "port=9099 method=POST path=/api/events/clipboard") {
               Write-Host "PASS: real Windows clipboard change produced /api/events/clipboard"
             } else {
@@ -153,6 +159,11 @@ jobs:
               Write-Host "PASS: PSK was sent in X-Agent-PSK"
             } else {
               Write-Host "FAIL: PSK header missing"; $pass = $false
+            }
+            if ($log -match '"install_token":"ci-install-token-123"') {
+              Write-Host "PASS: install token was included in agent payloads"
+            } else {
+              Write-Host "FAIL: install token missing"; $pass = $false
             }
             if ($log -match '"username":"([^"]+)"') {
               $reportedUser = $Matches[1]

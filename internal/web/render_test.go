@@ -23,6 +23,8 @@ func TestTemplateCache(t *testing.T) {
 		"admin_users.html",
 		"admin_alerts.html",
 		"admin_agents.html",
+		"admin_install.html",
+		"employee_install.html",
 	}
 
 	for _, page := range pages {
@@ -33,7 +35,7 @@ func TestTemplateCache(t *testing.T) {
 			}
 
 			// Verify layout pages have both "layout" and "content" templates
-			if page != "login.html" {
+			if page != "login.html" && page != "employee_install.html" {
 				if tmpl.Lookup("layout") == nil {
 					t.Errorf("template %s missing 'layout' definition", page)
 				}

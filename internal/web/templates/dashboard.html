@@ -18,6 +18,33 @@
   </div>
 </div>
 
+{{if .OnboardingSummary}}
+<div class="card" style="margin-bottom:1rem;border-color:#2563eb;">
+  <div class="card-header d-flex justify-between align-center" style="color:#2563eb;">
+    Windows onboarding 큐
+    <a href="/admin/install" class="btn btn-sm btn-primary">설치 링크 만들기</a>
+  </div>
+  {{$s := .OnboardingSummary}}
+  <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.7rem;padding:.2rem 0;">
+    <a href="/admin/agents" style="border:1px solid #e2e8f0;border-radius:8px;padding:.75rem .85rem;background:#f8fafc;text-decoration:none;color:inherit;">
+      <div style="font-weight:800;font-size:1.35rem;">{{$s.UnassignedAgents}}</div><div class="text-muted">미지정 PC</div>
+    </a>
+    <a href="/admin/agents" style="border:1px solid #e2e8f0;border-radius:8px;padding:.75rem .85rem;background:#f8fafc;text-decoration:none;color:inherit;">
+      <div style="font-weight:800;font-size:1.35rem;">{{$s.CaptureUnverifiedAgents}}</div><div class="text-muted">캡처 미검증</div>
+    </a>
+    <a href="/admin/agents" style="border:1px solid #e2e8f0;border-radius:8px;padding:.75rem .85rem;background:#f8fafc;text-decoration:none;color:inherit;">
+      <div style="font-weight:800;font-size:1.35rem;">{{$s.OfflineAgents}}</div><div class="text-muted">오프라인</div>
+    </a>
+    <a href="/admin/agents" style="border:1px solid #e2e8f0;border-radius:8px;padding:.75rem .85rem;background:#f8fafc;text-decoration:none;color:inherit;">
+      <div style="font-weight:800;font-size:1.35rem;">{{$s.ProblemAgents}}</div><div class="text-muted">문제 상태</div>
+    </a>
+    <a href="/admin/install" style="border:1px solid #e2e8f0;border-radius:8px;padding:.75rem .85rem;background:#f8fafc;text-decoration:none;color:inherit;">
+      <div style="font-weight:800;font-size:1.35rem;">{{$s.ActiveInstallTokens}}</div><div class="text-muted">활성 링크</div>
+    </a>
+  </div>
+</div>
+{{end}}
+
 {{if eq .Role "admin"}}
 <div class="card" style="margin-bottom:1rem;border-color:#2563eb;">
   <div class="card-header d-flex justify-between align-center" style="color:#2563eb;">

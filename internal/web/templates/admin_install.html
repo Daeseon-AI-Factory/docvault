@@ -1,113 +1,158 @@
 {{define "content"}}
 <style>
-  .inst-hero{background:#eff6ff;border:2px solid #2563eb;border-radius:14px;padding:16px 20px;margin:0 0 14px}
-  .inst-step{display:flex;gap:14px;align-items:flex-start;margin:1rem 0}
-  .inst-num{flex:0 0 32px;height:32px;border-radius:50%;background:#2563eb;color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center}
-  .inst-warn{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin:10px 0;color:#92400e}
-  .inst-ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 14px;margin:10px 0;color:#166534}
-  .inst-copy{background:#0f172a;color:#e5e7eb;border-radius:10px;padding:14px 16px;margin:12px 0;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.9rem;line-height:1.6}
-  .inst-no{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 14px;margin:10px 0;color:#991b1b}
+  .install-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:1rem;align-items:start}
+  .install-hero{background:#eff6ff;border:2px solid #2563eb;border-radius:12px;padding:16px 18px;margin:.5rem 0 1rem}
+  .install-link{display:flex;gap:8px;align-items:center;margin:.8rem 0;flex-wrap:wrap}
+  .install-link input{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+  .queue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem}
+  .queue-item{border:1px solid #e2e8f0;border-radius:8px;padding:.75rem .85rem;background:#f8fafc}
+  .queue-num{font-weight:800;font-size:1.4rem}
+  .step{display:flex;gap:12px;margin:.8rem 0;align-items:flex-start}
+  .step-num{flex:0 0 28px;height:28px;border-radius:50%;background:#2563eb;color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center}
   .mock{max-width:380px;margin:.6rem 0;border:1px solid #c7ccd1;border-radius:8px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.18);font-size:.86rem;background:#f0f0f0}
   .mock .bar{background:#e9e9e9;border-bottom:1px solid #d4d4d4;padding:7px 12px;font-weight:600;color:#222}
   .mock .body{padding:14px 16px;color:#222;background:#fff}
-  .mock .file{display:inline-block;margin-top:8px;padding:4px 8px;background:#f3f4f6;border:1px solid #e2e8f0;border-radius:6px}
   .mock .btns{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;background:#f0f0f0;border-top:1px solid #e2e8f0}
   .mock .b{padding:6px 16px;border:1px solid #b9bcc0;border-radius:5px;background:#fafafa;color:#333}
-  .mock .b.hi{background:#2563eb;border-color:#1d4ed8;color:#fff;font-weight:700;box-shadow:0 0 0 3px rgba(37,99,235,.25)}
+  .mock .b.hi{background:#2563eb;border-color:#1d4ed8;color:#fff;font-weight:700}
   .mock.uac .bar{background:#0b5394;color:#fff}
   .mock.ss{background:#1f4e79;border-color:#163a5a}
-  .mock.ss .bar{background:#1f4e79;color:#fff;border-bottom:none}
-  .mock.ss .body{background:#1f4e79;color:#e7eef6}
-  .mock.ss .btns{background:#1f4e79;border-top:none}
+  .mock.ss .bar,.mock.ss .body,.mock.ss .btns{background:#1f4e79;color:#e7eef6;border-color:#1f4e79}
   .mock.ss .b{background:#3a6ea5;border-color:#2c5680;color:#fff}
   .mock.ss .b.hi{background:#fff;color:#1f4e79;border-color:#fff}
   .mock.cmd{background:#0c0c0c;border-color:#000;max-width:440px}
   .mock.cmd .bar{background:#1a1a1a;color:#ccc}
   .mock.cmd .body{background:#0c0c0c;color:#d4ffd4;font-family:Consolas,monospace;white-space:pre-line}
-  .arrow{color:#dc2626;font-weight:800;font-size:.85rem}
+  @media(max-width:900px){.install-grid,.queue-grid{grid-template-columns:1fr}}
 </style>
 
-<div class="card mb-2">
-  <div class="card-header">① 설치파일 다운로드 (관리자용) / Download the installer</div>
-  <div class="inst-hero">
-    <div style="font-weight:800;font-size:1.1rem;margin-bottom:.3rem">🪟 원클릭 설치파일</div>
-    <p class="text-muted" style="margin:.2rem 0 .8rem">서버 주소와 인증키가 <b>이미 들어 있습니다.</b> 받아서 직원에게 보내면, 직원은 <b>더블클릭만</b> 하면 됩니다.</p>
-    <a href="/admin/agent-installer.bat" class="btn btn-primary" download="docvault-install.bat" style="font-size:1.05rem">⬇ docvault-install.bat 다운로드</a>
+{{if .CreatedInstallLink}}
+<div class="card mb-2" style="border-color:#16a34a;background:#f0fdf4;">
+  <div class="card-header" style="color:#166534;">직원에게 보낼 설치 링크가 생성됐습니다</div>
+  <div class="install-link">
+    <input id="created-install-link" class="form-control" style="flex:1;min-width:280px;" readonly value="{{.CreatedInstallLink}}">
+    <button type="button" class="btn btn-primary" onclick="navigator.clipboard.writeText(document.getElementById('created-install-link').value)">링크 복사</button>
   </div>
-  <p><b>직원에게 보내는 법 (3단계)</b></p>
-  <ol>
-    <li>위 버튼으로 <code>docvault-install.bat</code> 다운로드</li>
-    <li>직원에게 <b>카톡 “파일 보내기” 또는 USB</b>로 전달 <span style="color:#b45309">(⚠️ <b>이메일은 .bat를 막아요</b> — 카톡/USB 권장)</span></li>
-    <li>아래 <b>②번 안내</b>를 직원에게 보여주거나, <a href="/download/install-windows.ko.html" target="_blank">공개 설치 가이드 링크</a>를 함께 보내기</li>
-  </ol>
-  <div class="inst-warn">💡 <b>제일 확실한 방법:</b> 직원이 컴퓨터에 익숙하지 않다면, 첫 설치는 <b>원격(AnyDesk·팀뷰어)으로 직접</b> 깔아주세요. 한 번만 깔면 끝입니다.</div>
-  <p style="margin-top:1rem"><b>직원에게 그대로 보내는 문구</b></p>
-  <div class="inst-copy">DocVault 설치 파일 보냅니다.
-
-1. 받은 docvault-install.bat 파일을 바탕화면에 저장
-2. 파일을 더블클릭
-3. 경고창이 뜨면 [실행] → [예] → [추가 정보] → [실행] 순서로 누르기
-4. 검은 창에 "설치 완료!"가 보이면 끝
-5. 끝나면 완료 화면 사진을 저에게 보내주세요.
-
-Docker, WSL, PowerShell은 설치하거나 열 필요 없습니다.
-막히면 그 화면을 사진으로 찍어서 보내주세요.</div>
-  <div class="inst-no">🚫 <b>직원에게 시키지 말 것:</b> Docker 설치, WSL 설치, PowerShell 명령 입력, 인증키 직접 입력, 이메일로 .bat 보내기. 직원은 <b>파일 저장 → 더블클릭 → 버튼 누르기</b>만 하면 됩니다.</div>
+  <p class="text-muted">이 링크만 직원에게 보내세요. 직원 화면에는 인증키나 서버 설정이 보이지 않습니다.</p>
 </div>
+{{end}}
 
-<div class="card">
-  <div class="card-header">② 직원이 할 일 — 이 화면 그대로 따라하면 됩니다 / What the employee does</div>
-
-  <div class="inst-step"><div class="inst-num">1</div><div>
-    받은 <code>docvault-install.bat</code> 파일을 <b>바탕화면</b>에 저장.
-  </div></div>
-  <div class="inst-step"><div class="inst-num">2</div><div>
-    그 파일을 <b>마우스로 빠르게 두 번 클릭(더블클릭)</b>.
-  </div></div>
-
-  <p style="font-weight:700;margin-top:1.2rem">그러면 경고창이 차례로 뜹니다 — 당황 말고 이대로만 누르세요 👇</p>
-
-  <div class="inst-step"><div class="inst-num">3</div><div>
-    <b>“보안 경고” 창</b> → <b>[실행]</b>
-    <div class="mock">
-      <div class="bar">열린 파일 - 보안 경고</div>
-      <div class="body">이 파일을 실행하시겠습니까?<div class="file">📄 docvault-install.bat</div></div>
-      <div class="btns"><span class="b hi">실행 ←여기</span><span class="b">취소</span></div>
+<div class="install-grid">
+  <div>
+    <div class="card mb-2">
+      <div class="card-header">① 직원별 1회용 Windows 설치 링크</div>
+      <div class="install-hero">
+        <div style="font-weight:800;font-size:1.1rem;margin-bottom:.3rem">Windows 직원 onboarding 기본 경로</div>
+        <p class="text-muted" style="margin:.2rem 0;">직원을 선택하고 링크를 만들면, 직원은 링크를 열어 설치 파일만 다운로드합니다. 설치 후 해당 PC는 자동으로 직원에게 배정됩니다.</p>
+      </div>
+      <form method="POST" action="/admin/install-links/create" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <div class="form-group" style="min-width:260px;flex:1;">
+          <label>대상 직원</label>
+          <select name="user_id" class="form-control">
+            <option value="0">미지정 링크</option>
+            {{range .AllUsers}}<option value="{{.ID}}">{{.FullName}} ({{.Username}})</option>{{end}}
+          </select>
+        </div>
+        <div class="form-group" style="width:150px;">
+          <label>만료</label>
+          <select name="expires_hours" class="form-control">
+            <option value="24">24시간</option>
+            <option value="72" selected>3일</option>
+            <option value="168">7일</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">설치 링크 생성</button>
+      </form>
+      <p class="text-muted" style="margin-top:.7rem;">링크는 설치 완료 시 사용 처리됩니다. 만료되거나 사용된 링크는 다시 다운로드할 수 없습니다.</p>
     </div>
-  </div></div>
 
-  <div class="inst-step"><div class="inst-num">4</div><div>
-    <b>파란 “변경 허용” 창</b> → <b>[예]</b>
-    <div class="mock uac">
-      <div class="bar">사용자 계정 컨트롤</div>
-      <div class="body">이 앱이 디바이스를 변경할 수 있도록 허용하시겠어요?</div>
-      <div class="btns"><span class="b hi">예 ←여기</span><span class="b">아니요</span></div>
-    </div>
-  </div></div>
-
-  <div class="inst-step"><div class="inst-num">5</div><div>
-    <b>“Windows의 PC를 보호했습니다” (파란 화면)</b> → 작은 글씨 <b>[추가 정보]</b>를 누르면 → 아래에 <b>[실행]</b> 버튼이 새로 생깁니다 → 그걸 누르세요.
-    <div class="mock ss">
-      <div class="bar">Windows의 PC를 보호했습니다</div>
-      <div class="body">Microsoft Defender SmartScreen에서 인식할 수 없는 앱의 시작을 막았습니다.<br><br><u>추가 정보</u> <span class="arrow">← ① 먼저 이걸</span></div>
-      <div class="btns"><span class="b hi">실행 <span class="arrow">← ② 이게 생겨요</span></span><span class="b">실행 안 함</span></div>
-    </div>
-    <span class="text-muted">※ 외부 서명을 안 받은 사내 프로그램이라 뜨는 정상 경고예요. 안전합니다.</span>
-  </div></div>
-
-  <div class="inst-step"><div class="inst-num">6</div><div>
-    <b>검은 창</b>이 잠깐 뜨고 <b>“설치 완료!”</b>가 보이면 <b>끝!</b> 창을 닫으면 됩니다.
-    <div class="mock cmd">
-      <div class="bar">C:\Windows\System32\cmd.exe</div>
-      <div class="body"> DocVault 보안 에이전트를 설치합니다...
+    <div class="card mb-2">
+      <div class="card-header">② 직원이 보는 화면</div>
+      <div class="step"><div class="step-num">1</div><div>직원이 받은 링크를 열고 <b>docvault-install.bat 다운로드</b>를 누릅니다.</div></div>
+      <div class="step"><div class="step-num">2</div><div>다운로드한 파일을 더블클릭합니다.</div></div>
+      <div class="step"><div class="step-num">3</div><div>Windows 경고창에서 아래 순서로 누릅니다.</div></div>
+      <div class="mock">
+        <div class="bar">열린 파일 - 보안 경고</div>
+        <div class="body">이 파일을 실행하시겠습니까?</div>
+        <div class="btns"><span class="b hi">실행</span><span class="b">취소</span></div>
+      </div>
+      <div class="mock uac">
+        <div class="bar">사용자 계정 컨트롤</div>
+        <div class="body">이 앱이 디바이스를 변경할 수 있도록 허용하시겠어요?</div>
+        <div class="btns"><span class="b hi">예</span><span class="b">아니요</span></div>
+      </div>
+      <div class="mock ss">
+        <div class="bar">Windows의 PC를 보호했습니다</div>
+        <div class="body"><u>추가 정보</u>를 누르면 아래에 실행 버튼이 생깁니다.</div>
+        <div class="btns"><span class="b hi">실행</span><span class="b">실행 안 함</span></div>
+      </div>
+      <div class="mock cmd">
+        <div class="bar">C:\Windows\System32\cmd.exe</div>
+        <div class="body"> DocVault 보안 에이전트를 설치합니다...
  ============================================
    설치 완료! 이 창을 닫으셔도 됩니다.
  ============================================</div>
+      </div>
     </div>
-  </div></div>
+  </div>
 
-  <div class="inst-ok">✅ 끝! 컴퓨터를 껐다 켜도 자동으로 다시 시작됩니다. 설치되면 이 직원 PC가 <a href="/admin/agents">에이전트 상태</a>에 자동으로 표시됩니다 → 그 PC를 직원에게 배정하세요.</div>
-  <div class="inst-warn">❓ 중간에 막히거나 다른 창이 뜨면 — 그 <b>화면을 캡처해서 관리자</b>에게 보내라고 하세요.</div>
-  <p class="text-muted">전문가용 수동 설치(PowerShell)는 <a href="/download/install-windows.ko.html" target="_blank">공개 설치 가이드</a> 하단의 “전문가용” 항목을 참고하세요.</p>
+  <div>
+    <div class="card mb-2">
+      <div class="card-header">Windows onboarding 큐</div>
+      {{$s := .OnboardingSummary}}
+      {{if $s}}
+      <div class="queue-grid">
+        <a class="queue-item" href="/admin/agents"><div class="queue-num">{{$s.UnassignedAgents}}</div><div class="text-muted">미지정 PC</div></a>
+        <a class="queue-item" href="/admin/agents"><div class="queue-num">{{$s.CaptureUnverifiedAgents}}</div><div class="text-muted">캡처 미검증</div></a>
+        <a class="queue-item" href="/admin/agents"><div class="queue-num">{{$s.OfflineAgents}}</div><div class="text-muted">오프라인 의심</div></a>
+        <a class="queue-item" href="/admin/agents"><div class="queue-num">{{$s.ProblemAgents}}</div><div class="text-muted">문제 상태</div></a>
+        <a class="queue-item" href="/admin/agents"><div class="queue-num">{{$s.MachineUserAgents}}</div><div class="text-muted">서비스 계정 의심</div></a>
+        <div class="queue-item"><div class="queue-num">{{$s.ActiveInstallTokens}}</div><div class="text-muted">활성 설치 링크</div></div>
+      </div>
+      {{else}}
+      <p class="text-muted">아직 agent 상태 데이터가 없습니다.</p>
+      {{end}}
+    </div>
+
+    <div class="card mb-2">
+      <div class="card-header">최근 설치 링크</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>대상</th><th>상태</th><th>만료</th><th></th></tr></thead>
+          <tbody>
+            {{range .InstallTokens}}
+            <tr>
+              <td>{{if .UserID}}{{.FullName}} <span class="text-muted">({{.Username}})</span>{{else}}<span class="text-muted">미지정</span>{{end}}</td>
+              <td>
+                {{if .RevokedAt}}<span class="badge badge-secondary">폐기</span>
+                {{else if .UsedAt}}<span class="badge badge-success">사용됨</span>
+                {{else}}<span class="badge badge-info">활성</span>{{end}}
+                {{if .UsedHostname}}<br><span class="text-muted">{{.UsedHostname}}</span>{{end}}
+              </td>
+              <td class="text-muted">{{.ExpiresAt.Format "01-02 15:04"}}</td>
+              <td>
+                {{if and (not .UsedAt) (not .RevokedAt)}}
+                <form method="POST" action="/admin/install-links/{{.ID}}/revoke" style="display:inline;">
+                  <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                  <button class="btn btn-sm btn-outline" type="submit">폐기</button>
+                </form>
+                {{end}}
+              </td>
+            </tr>
+            {{else}}
+            <tr><td colspan="4" class="text-muted">아직 생성된 링크가 없습니다.</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">관리자용 fallback</div>
+      <p class="text-muted">직원별 자동 배정이 필요 없거나 원격으로 직접 설치할 때만 사용하세요.</p>
+      <a href="/admin/agent-installer.bat" class="btn btn-outline" download="docvault-install.bat">미지정 설치파일 다운로드</a>
+    </div>
+  </div>
 </div>
 {{end}}

@@ -2,10 +2,14 @@ package endpoint
 
 import (
 	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -222,17 +226,26 @@ func (r *Repository) UnifiedTimeline(ctx context.Context, userID int64, limit, o
 
 // AgentRow is a registered endpoint agent joined with its assigned user.
 type AgentRow struct {
-	ID               int64
-	Hostname         string
-	Source           string
-	UserID           *int64
-	Username         *string
-	FullName         *string
-	ReportedUsername string
-	LastIP           string
-	IsActive         bool
-	LastCheckin      time.Time
-	EventCount       int64
+	ID                   int64
+	Hostname             string
+	Source               string
+	UserID               *int64
+	Username             *string
+	FullName             *string
+	ReportedUsername     string
+	LastIP               string
+	IsActive             bool
+	LastCheckin          time.Time
+	EventCount           int64
+	InstallTokenID       *int64
+	AgentVersion         string
+	RunningMode          string
+	SessionUser          string
+	HealthStatus         string
+	ClipboardAvailable   *bool
+	ClipboardError       string
+	LastSelfTestAt       *time.Time
+	LastClipboardEventAt *time.Time
 }
 
 // TouchAgent records that an agent was just seen. Event posts, osquery config
@@ -265,7 +278,10 @@ func (r *Repository) ListAgents(ctx context.Context) ([]*AgentRow, error) {
 		`SELECT a.id, a.hostname, a.source, a.user_id, u.username, u.full_name,
 		        a.reported_username, a.last_ip, a.is_active, a.last_checkin,
 		        COALESCE((SELECT COUNT(*) FROM endpoint_events e
-		                  WHERE e.hostname = a.hostname AND e.event_time >= NOW() - INTERVAL '24 hours'), 0) AS cnt
+		                  WHERE e.hostname = a.hostname AND e.event_time >= NOW() - INTERVAL '24 hours'), 0) AS cnt,
+		        a.install_token_id, a.agent_version, a.running_mode, a.session_user,
+		        a.health_status, a.clipboard_available, a.clipboard_error,
+		        a.last_self_test_at, a.last_clipboard_event_at
 		 FROM endpoint_agents a
 		 LEFT JOIN users u ON u.id = a.user_id
 		 ORDER BY a.last_checkin DESC`)
@@ -277,9 +293,30 @@ func (r *Repository) ListAgents(ctx context.Context) ([]*AgentRow, error) {
 	var out []*AgentRow
 	for rows.Next() {
 		var a AgentRow
+		var clipboardAvailable sql.NullBool
+		var installTokenID sql.NullInt64
+		var lastSelfTestAt, lastClipboardEventAt sql.NullTime
 		if err := rows.Scan(&a.ID, &a.Hostname, &a.Source, &a.UserID, &a.Username, &a.FullName,
-			&a.ReportedUsername, &a.LastIP, &a.IsActive, &a.LastCheckin, &a.EventCount); err != nil {
+			&a.ReportedUsername, &a.LastIP, &a.IsActive, &a.LastCheckin, &a.EventCount,
+			&installTokenID, &a.AgentVersion, &a.RunningMode, &a.SessionUser,
+			&a.HealthStatus, &clipboardAvailable, &a.ClipboardError,
+			&lastSelfTestAt, &lastClipboardEventAt); err != nil {
 			return nil, fmt.Errorf("scan agent: %w", err)
+		}
+		if installTokenID.Valid {
+			a.InstallTokenID = &installTokenID.Int64
+		}
+		if clipboardAvailable.Valid {
+			v := clipboardAvailable.Bool
+			a.ClipboardAvailable = &v
+		}
+		if lastSelfTestAt.Valid {
+			t := lastSelfTestAt.Time
+			a.LastSelfTestAt = &t
+		}
+		if lastClipboardEventAt.Valid {
+			t := lastClipboardEventAt.Time
+			a.LastClipboardEventAt = &t
 		}
 		out = append(out, &a)
 	}
@@ -309,4 +346,288 @@ func (r *Repository) AssignAgent(ctx context.Context, agentID int64, userID *int
 		return fmt.Errorf("assign host %s: %w", hostname, err)
 	}
 	return tx.Commit(ctx)
+}
+
+// AssignHostname sets (or clears) the employee for all agent rows belonging to
+// a hostname. Windows onboarding thinks in PCs, while clipboard/osquery can
+// create separate source rows for the same host.
+func (r *Repository) AssignHostname(ctx context.Context, hostname string, userID *int64) error {
+	if hostname == "" {
+		return nil
+	}
+	_, err := r.db.Exec(ctx,
+		`UPDATE endpoint_agents SET user_id = $1 WHERE hostname = $2`,
+		userID, hostname,
+	)
+	if err != nil {
+		return fmt.Errorf("assign hostname %s: %w", hostname, err)
+	}
+	return nil
+}
+
+type AgentHealthUpdate struct {
+	Hostname           string
+	Source             string
+	Username           string
+	LastIP             string
+	InstallTokenID     *int64
+	AgentVersion       string
+	RunningMode        string
+	SessionUser        string
+	HealthStatus       string
+	ClipboardAvailable bool
+	ClipboardError     string
+}
+
+func (r *Repository) UpdateAgentHealth(ctx context.Context, h AgentHealthUpdate) (int64, error) {
+	if h.Hostname == "" {
+		return 0, fmt.Errorf("hostname is required")
+	}
+	if h.Source == "" {
+		h.Source = "clipboard"
+	}
+	if h.HealthStatus == "" {
+		h.HealthStatus = "installed"
+	}
+	var id int64
+	err := r.db.QueryRow(ctx,
+		`INSERT INTO endpoint_agents
+		 (hostname, source, reported_username, last_ip, install_token_id, agent_version,
+		  running_mode, session_user, health_status, clipboard_available, clipboard_error,
+		  last_self_test_at, last_checkin, is_active)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW(), true)
+		 ON CONFLICT (hostname, source)
+		 DO UPDATE SET reported_username = COALESCE(NULLIF($3, ''), endpoint_agents.reported_username),
+		               last_ip = COALESCE(NULLIF($4, ''), endpoint_agents.last_ip),
+		               install_token_id = COALESCE($5, endpoint_agents.install_token_id),
+		               agent_version = COALESCE(NULLIF($6, ''), endpoint_agents.agent_version),
+		               running_mode = COALESCE(NULLIF($7, ''), endpoint_agents.running_mode),
+		               session_user = COALESCE(NULLIF($8, ''), endpoint_agents.session_user),
+		               health_status = CASE
+		                   WHEN endpoint_agents.last_clipboard_event_at IS NOT NULL AND $9 = 'capture_waiting'
+		                   THEN endpoint_agents.health_status
+		                   ELSE $9
+		               END,
+		               clipboard_available = $10,
+		               clipboard_error = $11,
+		               last_self_test_at = NOW(),
+		               last_checkin = NOW(),
+		               is_active = true
+		 RETURNING id`,
+		h.Hostname, h.Source, h.Username, h.LastIP, h.InstallTokenID, h.AgentVersion,
+		h.RunningMode, h.SessionUser, h.HealthStatus, h.ClipboardAvailable, h.ClipboardError,
+	).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("update agent health %s/%s: %w", h.Hostname, h.Source, err)
+	}
+	return id, nil
+}
+
+func (r *Repository) RecordClipboardCapture(ctx context.Context, hostname string) error {
+	if hostname == "" {
+		return nil
+	}
+	_, err := r.db.Exec(ctx,
+		`UPDATE endpoint_agents
+		 SET last_clipboard_event_at = NOW(), health_status = 'capture_ok'
+		 WHERE hostname = $1 AND source = 'clipboard'`,
+		hostname,
+	)
+	if err != nil {
+		return fmt.Errorf("record clipboard capture %s: %w", hostname, err)
+	}
+	return nil
+}
+
+type OnboardingSummary struct {
+	UnassignedAgents        int64
+	OfflineAgents           int64
+	CaptureUnverifiedAgents int64
+	ProblemAgents           int64
+	MachineUserAgents       int64
+	ActiveInstallTokens     int64
+}
+
+func (r *Repository) OnboardingSummary(ctx context.Context, onlineWindow time.Duration) (*OnboardingSummary, error) {
+	if onlineWindow <= 0 {
+		onlineWindow = 10 * time.Minute
+	}
+	minutes := int(onlineWindow / time.Minute)
+	if minutes <= 0 {
+		minutes = 10
+	}
+	var s OnboardingSummary
+	err := r.db.QueryRow(ctx,
+		`SELECT
+		    COALESCE(COUNT(*) FILTER (WHERE user_id IS NULL), 0),
+		    COALESCE(COUNT(*) FILTER (WHERE is_active = false OR last_checkin < NOW() - make_interval(mins => $1)), 0),
+		    COALESCE(COUNT(*) FILTER (WHERE source = 'clipboard' AND last_clipboard_event_at IS NULL), 0),
+		    COALESCE(COUNT(*) FILTER (WHERE health_status = 'problem' OR clipboard_available = false), 0),
+		    COALESCE(COUNT(*) FILTER (WHERE reported_username LIKE '%$'), 0),
+		    COALESCE((SELECT COUNT(*) FROM install_tokens
+		              WHERE used_at IS NULL AND revoked_at IS NULL AND expires_at > NOW()), 0)
+		 FROM endpoint_agents`,
+		minutes,
+	).Scan(&s.UnassignedAgents, &s.OfflineAgents, &s.CaptureUnverifiedAgents,
+		&s.ProblemAgents, &s.MachineUserAgents, &s.ActiveInstallTokens)
+	if err != nil {
+		return nil, fmt.Errorf("onboarding summary: %w", err)
+	}
+	return &s, nil
+}
+
+type InstallTokenRow struct {
+	ID               int64
+	UserID           *int64
+	Username         string
+	FullName         string
+	CreatedBy        *int64
+	CreatedAt        time.Time
+	ExpiresAt        time.Time
+	LastDownloadedAt *time.Time
+	UsedAt           *time.Time
+	UsedHostname     string
+	RevokedAt        *time.Time
+}
+
+func HashInstallToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+func (r *Repository) CreateInstallToken(ctx context.Context, rawToken string, userID *int64, createdBy int64, expiresAt time.Time) (int64, error) {
+	var id int64
+	err := r.db.QueryRow(ctx,
+		`INSERT INTO install_tokens (token_hash, user_id, created_by, expires_at)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING id`,
+		HashInstallToken(rawToken), userID, createdBy, expiresAt,
+	).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("create install token: %w", err)
+	}
+	return id, nil
+}
+
+func (r *Repository) ListInstallTokens(ctx context.Context, limit int) ([]InstallTokenRow, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := r.db.Query(ctx,
+		`SELECT t.id, t.user_id, COALESCE(u.username, ''), COALESCE(u.full_name, ''),
+		        t.created_by, t.created_at, t.expires_at, t.last_downloaded_at,
+		        t.used_at, t.used_hostname, t.revoked_at
+		 FROM install_tokens t
+		 LEFT JOIN users u ON u.id = t.user_id
+		 ORDER BY t.created_at DESC
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list install tokens: %w", err)
+	}
+	defer rows.Close()
+
+	var out []InstallTokenRow
+	for rows.Next() {
+		row, err := scanInstallTokenRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) GetUsableInstallToken(ctx context.Context, rawToken string) (*InstallTokenRow, error) {
+	row := r.db.QueryRow(ctx,
+		`SELECT t.id, t.user_id, COALESCE(u.username, ''), COALESCE(u.full_name, ''),
+		        t.created_by, t.created_at, t.expires_at, t.last_downloaded_at,
+		        t.used_at, t.used_hostname, t.revoked_at
+		 FROM install_tokens t
+		 LEFT JOIN users u ON u.id = t.user_id
+		 WHERE t.token_hash = $1
+		   AND t.used_at IS NULL
+		   AND t.revoked_at IS NULL
+		   AND t.expires_at > NOW()
+		 LIMIT 1`,
+		HashInstallToken(rawToken),
+	)
+	token, err := scanInstallTokenRow(row)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get install token: %w", err)
+	}
+	return &token, nil
+}
+
+func (r *Repository) MarkInstallTokenDownloaded(ctx context.Context, tokenID int64) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE install_tokens SET last_downloaded_at = NOW() WHERE id = $1 AND last_downloaded_at IS NULL`,
+		tokenID,
+	)
+	if err != nil {
+		return fmt.Errorf("mark install token downloaded: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) MarkInstallTokenUsed(ctx context.Context, tokenID int64, hostname string, agentID int64) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE install_tokens
+		 SET used_at = COALESCE(used_at, NOW()),
+		     used_hostname = COALESCE(NULLIF(used_hostname, ''), $2),
+		     used_agent_id = COALESCE(used_agent_id, $3)
+		 WHERE id = $1`,
+		tokenID, hostname, agentID,
+	)
+	if err != nil {
+		return fmt.Errorf("mark install token used: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) RevokeInstallToken(ctx context.Context, tokenID int64) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE install_tokens SET revoked_at = COALESCE(revoked_at, NOW()) WHERE id = $1`,
+		tokenID,
+	)
+	if err != nil {
+		return fmt.Errorf("revoke install token: %w", err)
+	}
+	return nil
+}
+
+type installTokenScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanInstallTokenRow(s installTokenScanner) (InstallTokenRow, error) {
+	var row InstallTokenRow
+	var userID, createdBy sql.NullInt64
+	var lastDownloadedAt, usedAt, revokedAt sql.NullTime
+	if err := s.Scan(&row.ID, &userID, &row.Username, &row.FullName,
+		&createdBy, &row.CreatedAt, &row.ExpiresAt, &lastDownloadedAt,
+		&usedAt, &row.UsedHostname, &revokedAt); err != nil {
+		return row, err
+	}
+	if userID.Valid {
+		row.UserID = &userID.Int64
+	}
+	if createdBy.Valid {
+		row.CreatedBy = &createdBy.Int64
+	}
+	if lastDownloadedAt.Valid {
+		t := lastDownloadedAt.Time
+		row.LastDownloadedAt = &t
+	}
+	if usedAt.Valid {
+		t := usedAt.Time
+		row.UsedAt = &t
+	}
+	if revokedAt.Valid {
+		t := revokedAt.Time
+		row.RevokedAt = &t
+	}
+	return row, nil
 }

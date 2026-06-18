@@ -11,7 +11,7 @@
   {{end}}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Hostname</th><th>OS User</th><th>Last IP</th><th>Source</th><th>Last Report</th><th>Events (24h)</th><th>Status</th></tr></thead>
+      <thead><tr><th>Hostname</th><th>OS User</th><th>Last IP</th><th>Source</th><th>Health</th><th>Last Report</th><th>Events (24h)</th><th>Status</th></tr></thead>
       <tbody>
         {{range .Agents}}
         <tr>
@@ -22,6 +22,14 @@
           </td>
           <td>{{if .LastIP}}<code>{{.LastIP}}</code>{{else}}<span class="text-muted">-</span>{{end}}</td>
           <td><span class="badge badge-info">{{.Source}}</span></td>
+          <td>
+            {{if eq .HealthStatus "capture_ok"}}<span class="badge badge-success">캡처 검증됨</span>
+            {{else if eq .HealthStatus "capture_waiting"}}<span class="badge badge-warning">캡처 대기</span>
+            {{else if eq .HealthStatus "problem"}}<span class="badge badge-danger">문제</span>
+            {{else}}<span class="badge badge-secondary">미검증</span>{{end}}
+            {{if .RunningMode}}<br><span class="text-muted">{{.RunningMode}}</span>{{end}}
+            {{if .ClipboardError}}<br><span style="color:#b45309;font-size:.82rem;">{{.ClipboardError}}</span>{{end}}
+          </td>
           <td class="text-muted">{{.LastCheckin.Format "2006-01-02 15:04:05"}}</td>
           <td>{{.EventCount}}</td>
           <td>
@@ -30,7 +38,7 @@
           </td>
         </tr>
         {{else}}
-        <tr><td colspan="7" class="text-muted">No agents reporting</td></tr>
+        <tr><td colspan="8" class="text-muted">No agents reporting</td></tr>
         {{end}}
       </tbody>
     </table>
@@ -45,7 +53,7 @@
   </p>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Hostname</th><th>OS User</th><th>Last IP</th><th>Source</th><th>현재 담당자</th><th>24h</th><th>담당자 지정</th></tr></thead>
+      <thead><tr><th>Hostname</th><th>OS User</th><th>Last IP</th><th>Source</th><th>검증 상태</th><th>현재 담당자</th><th>24h</th><th>담당자 지정</th></tr></thead>
       <tbody>
         {{range .RegisteredAgents}}
         {{$agent := .}}
@@ -57,6 +65,14 @@
           </td>
           <td>{{if .LastIP}}<code>{{.LastIP}}</code>{{else}}<span class="text-muted">-</span>{{end}}</td>
           <td><span class="badge badge-info">{{.Source}}</span></td>
+          <td>
+            {{if eq .HealthStatus "capture_ok"}}<span class="badge badge-success">캡처 OK</span>
+            {{else if eq .HealthStatus "capture_waiting"}}<span class="badge badge-warning">Ctrl+C 대기</span>
+            {{else if eq .HealthStatus "problem"}}<span class="badge badge-danger">문제</span>
+            {{else}}<span class="badge badge-secondary">미검증</span>{{end}}
+            {{if .LastClipboardEventAt}}<br><span class="text-muted">최근 캡처 {{.LastClipboardEventAt.Format "01-02 15:04"}}</span>{{end}}
+            {{if .LastSelfTestAt}}<br><span class="text-muted">self-test {{.LastSelfTestAt.Format "01-02 15:04"}}</span>{{end}}
+          </td>
           <td>{{if .Username}}{{.FullName}} <span class="text-muted">({{.Username}})</span>{{else}}<span style="color:#ef4444">미지정</span>{{end}}</td>
           <td>{{.EventCount}}</td>
           <td>
@@ -72,7 +88,7 @@
           </td>
         </tr>
         {{else}}
-        <tr><td colspan="7" class="text-muted">등록된 에이전트 없음 — PC에 에이전트를 설치하면 자동 등록됩니다.</td></tr>
+        <tr><td colspan="8" class="text-muted">등록된 에이전트 없음 — PC에 에이전트를 설치하면 자동 등록됩니다.</td></tr>
         {{end}}
       </tbody>
     </table>
@@ -93,20 +109,14 @@
   <div class="card-header">📥 에이전트 다운로드 &amp; 설치 / Agent Download &amp; Install</div>
 
   <div style="background:#eff6ff;border:2px solid #2563eb;border-radius:12px;padding:16px 18px;margin:.7rem 0;">
-    <div style="font-weight:700;font-size:1.05rem;margin-bottom:.3rem;">🪟 제일 쉬움 — 원클릭 설치 (Windows)</div>
+    <div style="font-weight:700;font-size:1.05rem;margin-bottom:.3rem;">🪟 권장 — 직원별 1회용 설치 링크 (Windows)</div>
     <p class="text-muted" style="margin:.2rem 0 .7rem;">
-      아래 파일을 받아 <b>직원에게 보내기만</b> 하면 됩니다. 직원은 받은 파일을 <b>더블클릭</b> → 권한 요청 창에서 <b>“예”</b> → 끝.
-      <b>인증키도, PowerShell도, 복사·붙여넣기도 필요 없습니다.</b> (인증키·서버주소가 이미 들어 있어요.)<br>
-      <span style="opacity:.7">Download this, send it to the employee — they just double-click it. No key, no PowerShell, no copy-paste.</span>
+      직원별 링크를 만들면 설치 후 PC가 자동으로 그 직원에게 배정되고, 캡처 검증 상태까지 여기서 확인할 수 있습니다.<br>
+      <span style="opacity:.7">Use a one-time employee link so assignment and capture health are tracked automatically.</span>
     </p>
-    <a href="/admin/agent-installer.bat" class="btn btn-primary" download="docvault-install.bat" style="font-size:1rem;">⬇ docvault-install.bat 다운로드</a>
+    <a href="/admin/install" class="btn btn-primary" style="font-size:1rem;">설치 링크 만들기</a>
     <div style="margin-top:.8rem;font-size:.9rem;line-height:1.7;">
-      <b>보내는 법 (3단계):</b>
-      <ol style="margin:.3rem 0 .2rem 1.1rem;padding:0;">
-        <li>위 버튼으로 <code>docvault-install.bat</code> 다운로드</li>
-        <li>직원에게 <b>카톡 “파일 보내기” 또는 USB</b>로 전달 <span style="color:#b45309;">(⚠️ <b>이메일은 .bat를 막을 수 있어요</b> — 카톡/USB 권장)</span></li>
-        <li>직원에게 <a href="/download/install-windows.ko.html" target="_blank"><b>설치 가이드</b></a> 링크도 같이 보내기 → 직원은 받은 파일 <b>더블클릭</b>만</li>
-      </ol>
+      <b>흐름:</b> 직원 선택 → 링크 생성 → 직원이 링크에서 다운로드 → 더블클릭 → 이 화면에서 보고중/캡처 검증됨 확인.
       <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;margin-top:.4rem;color:#9a3412;font-size:.85rem;">
         💡 <b>제일 확실한 방법:</b> 비전문가 직원이라면, 첫 설치는 <b>원격(AnyDesk·팀뷰어)으로 직접 깔아주는 것</b>이 안전합니다. 한 번만 깔면 끝이에요.
       </div>

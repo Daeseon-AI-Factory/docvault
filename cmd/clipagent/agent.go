@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	agentVersion      = "dev"
 	pollInterval      = 500 * time.Millisecond // clipboard poll cadence
 	heartbeatInterval = 60 * time.Second       // liveness update cadence even when no clipboard event occurs
 	enrollInterval    = 5 * time.Minute        // periodic re-enroll (covers server restarts / IP changes)
@@ -25,14 +26,15 @@ const (
 
 // ClipboardEvent is the payload sent to the server.
 type ClipboardEvent struct {
-	Hostname    string `json:"hostname"`
-	Username    string `json:"username"`
-	Action      string `json:"action"`       // "copy"
-	Application string `json:"application"`  // source app
-	ContentType string `json:"content_type"` // "text", "files", "image"
-	ContentSize int    `json:"content_size"`
-	WindowTitle string `json:"window_title"`
-	Timestamp   string `json:"timestamp"`
+	Hostname     string `json:"hostname"`
+	Username     string `json:"username"`
+	Action       string `json:"action"`       // "copy"
+	Application  string `json:"application"`  // source app
+	ContentType  string `json:"content_type"` // "text", "files", "image"
+	ContentSize  int    `json:"content_size"`
+	WindowTitle  string `json:"window_title"`
+	Timestamp    string `json:"timestamp"`
+	InstallToken string `json:"install_token,omitempty"`
 }
 
 // ClipboardMonitor is implemented per-platform (Windows/macOS).
@@ -56,6 +58,7 @@ func runMonitor() {
 	}
 
 	psk := os.Getenv("DOCVAULT_AGENT_PSK")
+	installToken := os.Getenv("DOCVAULT_INSTALL_TOKEN")
 	hostname, _ := os.Hostname()
 	username := getUsername()
 
@@ -86,14 +89,15 @@ func runMonitor() {
 
 	// Enroll now, then periodically — re-enrollment survives server restarts and
 	// host/IP changes without manual intervention.
-	enrollAgent(client, serverURL, psk, hostname, username)
-	sendHeartbeat(client, serverURL, psk, hostname, username)
+	monitor := newClipboardMonitor()
+	enrollAgent(client, serverURL, psk, installToken, hostname, username)
+	sendHeartbeat(client, serverURL, psk, installToken, hostname, username)
+	sendSelfTest(client, serverURL, psk, installToken, hostname, username)
 	enrollTicker := time.NewTicker(enrollInterval)
 	defer enrollTicker.Stop()
 	heartbeatTicker := time.NewTicker(heartbeatInterval)
 	defer heartbeatTicker.Stop()
 
-	monitor := newClipboardMonitor()
 	pollTicker := time.NewTicker(pollInterval)
 	defer pollTicker.Stop()
 
@@ -113,10 +117,11 @@ func runMonitor() {
 			return
 
 		case <-enrollTicker.C:
-			enrollAgent(client, serverURL, psk, hostname, username)
+			enrollAgent(client, serverURL, psk, installToken, hostname, username)
 
 		case <-heartbeatTicker.C:
-			go sendHeartbeat(client, serverURL, psk, hostname, username)
+			go sendHeartbeat(client, serverURL, psk, installToken, hostname, username)
+			go sendSelfTest(client, serverURL, psk, installToken, hostname, username)
 
 		case <-pollTicker.C:
 			snap := monitor.Poll()
@@ -125,14 +130,15 @@ func runMonitor() {
 			}
 
 			event := &ClipboardEvent{
-				Hostname:    hostname,
-				Username:    username,
-				Action:      "copy",
-				Application: snap.AppName,
-				ContentType: snap.ContentType,
-				ContentSize: snap.ContentSize,
-				WindowTitle: snap.WindowTitle,
-				Timestamp:   time.Now().UTC().Format(time.RFC3339),
+				Hostname:     hostname,
+				Username:     username,
+				Action:       "copy",
+				Application:  snap.AppName,
+				ContentType:  snap.ContentType,
+				ContentSize:  snap.ContentSize,
+				WindowTitle:  snap.WindowTitle,
+				Timestamp:    time.Now().UTC().Format(time.RFC3339),
+				InstallToken: installToken,
 			}
 
 			enqueue(queue, event)
@@ -140,11 +146,12 @@ func runMonitor() {
 	}
 }
 
-func sendHeartbeat(client *http.Client, serverURL, psk, hostname, username string) {
+func sendHeartbeat(client *http.Client, serverURL, psk, installToken, hostname, username string) {
 	payload, _ := json.Marshal(map[string]string{
-		"hostname": hostname,
-		"username": username,
-		"source":   "clipboard",
+		"hostname":      hostname,
+		"username":      username,
+		"source":        "clipboard",
+		"install_token": installToken,
 	})
 
 	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/heartbeat", bytes.NewReader(payload))
@@ -169,6 +176,43 @@ func sendHeartbeat(client *http.Client, serverURL, psk, hostname, username strin
 	}
 }
 
+func sendSelfTest(client *http.Client, serverURL, psk, installToken, hostname, username string) {
+	clipboardOK, clipboardErr := clipboardProbe()
+	runningMode := agentRunningMode()
+	payload, _ := json.Marshal(map[string]interface{}{
+		"hostname":            hostname,
+		"username":            username,
+		"source":              "clipboard",
+		"install_token":       installToken,
+		"agent_version":       agentVersion,
+		"running_mode":        runningMode,
+		"session_user":        username,
+		"clipboard_available": clipboardOK,
+		"clipboard_error":     clipboardErr,
+	})
+
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/agent/self-test", bytes.NewReader(payload))
+	if err != nil {
+		log.Printf("self-test request error: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if psk != "" {
+		req.Header.Set("X-Agent-PSK", psk)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("self-test error: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("self-test returned status %d", resp.StatusCode)
+	}
+}
+
 // enqueue adds an event without blocking the poll loop. If the queue is full
 // (server down for a while), it drops the oldest event to bound memory.
 func enqueue(queue chan *ClipboardEvent, event *ClipboardEvent) {
@@ -189,11 +233,12 @@ func enqueue(queue chan *ClipboardEvent, event *ClipboardEvent) {
 	log.Println("event queue full — dropped the oldest event")
 }
 
-func enrollAgent(client *http.Client, serverURL, psk, hostname, username string) {
+func enrollAgent(client *http.Client, serverURL, psk, installToken, hostname, username string) {
 	payload, _ := json.Marshal(map[string]string{
-		"hostname": hostname,
-		"username": username,
-		"source":   "clipboard",
+		"hostname":      hostname,
+		"username":      username,
+		"source":        "clipboard",
+		"install_token": installToken,
 	})
 
 	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/enroll", bytes.NewReader(payload))

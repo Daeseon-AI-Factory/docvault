@@ -76,6 +76,8 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Get("/login/2fa", deps.PageHandler.Login2FAPage)
 	r.Post("/login/2fa", deps.PageHandler.Login2FASubmit)
 	r.Get("/logout", deps.PageHandler.Logout)
+	r.Get("/install/{token}", deps.PageHandler.EmployeeInstallPage)
+	r.Get("/install/{token}/download", deps.PageHandler.EmployeeInstaller)
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 	})
@@ -88,6 +90,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Post("/api/events/osquery", deps.EndpointHandler.ReceiveOsquery)
 	r.Post("/api/events/clipboard", deps.EndpointHandler.ReceiveClipboard)
 	r.Post("/api/heartbeat", deps.EndpointHandler.ReceiveHeartbeat)
+	r.Post("/api/agent/self-test", deps.EndpointHandler.ReceiveSelfTest)
 	r.Post("/api/enroll", deps.EndpointHandler.Enroll)
 	r.Post("/api/config", deps.EndpointHandler.AgentConfig)
 
@@ -205,6 +208,8 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Get("/admin/alerts", deps.PageHandler.AdminAlertsPage)
 			r.Get("/admin/agents", deps.PageHandler.AdminAgentsPage)
 			r.Get("/admin/install", deps.PageHandler.InstallPage)
+			r.Post("/admin/install-links/create", deps.PageHandler.CreateInstallLink)
+			r.Post("/admin/install-links/{tokenID}/revoke", deps.PageHandler.RevokeInstallLink)
 			r.Post("/admin/agents/assign", deps.FormHandler.AssignAgent)
 			r.Get("/admin/agent-installer.bat", deps.PageHandler.AgentInstaller)
 			r.Post("/admin/users/create", deps.FormHandler.CreateUser)

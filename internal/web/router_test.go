@@ -27,6 +27,7 @@ func TestAllRoutesRegistered(t *testing.T) {
 	r.Post("/api/events/osquery", noop)
 	r.Post("/api/events/clipboard", noop)
 	r.Post("/api/heartbeat", noop)
+	r.Post("/api/agent/self-test", noop)
 	r.Post("/api/enroll", noop)
 	r.Post("/api/config", noop)
 
@@ -71,6 +72,8 @@ func TestAllRoutesRegistered(t *testing.T) {
 	r.Get("/login", noop)
 	r.Post("/login", noop)
 	r.Get("/logout", noop)
+	r.Get("/install/{token}", noop)
+	r.Get("/install/{token}/download", noop)
 	r.Get("/dashboard", noop)
 	r.Get("/files", noop)
 	r.Get("/files/{fileID}", noop)
@@ -80,6 +83,7 @@ func TestAllRoutesRegistered(t *testing.T) {
 	r.Get("/admin/users", noop)
 	r.Get("/admin/alerts", noop)
 	r.Get("/admin/agents", noop)
+	r.Get("/admin/install", noop)
 
 	// Form handlers
 	r.Post("/files/upload", noop)
@@ -87,6 +91,8 @@ func TestAllRoutesRegistered(t *testing.T) {
 	r.Post("/files/{fileID}/checkin", noop)
 	r.Post("/folders/create", noop)
 	r.Post("/admin/users/create", noop)
+	r.Post("/admin/install-links/create", noop)
+	r.Post("/admin/install-links/{tokenID}/revoke", noop)
 	r.Post("/admin/alerts/rules/create", noop)
 	r.Post("/admin/alerts/{alertID}/acknowledge", noop)
 
@@ -102,6 +108,7 @@ func TestAllRoutesRegistered(t *testing.T) {
 		{"POST", "/api/events/osquery"},
 		{"POST", "/api/events/clipboard"},
 		{"POST", "/api/heartbeat"},
+		{"POST", "/api/agent/self-test"},
 		{"POST", "/api/enroll"},
 		{"POST", "/api/config"},
 
@@ -142,6 +149,8 @@ func TestAllRoutesRegistered(t *testing.T) {
 		{"GET", "/login"},
 		{"POST", "/login"},
 		{"GET", "/logout"},
+		{"GET", "/install/test-token"},
+		{"GET", "/install/test-token/download"},
 		{"GET", "/dashboard"},
 		{"GET", "/files"},
 		{"GET", "/files/123"},
@@ -151,6 +160,7 @@ func TestAllRoutesRegistered(t *testing.T) {
 		{"GET", "/admin/users"},
 		{"GET", "/admin/alerts"},
 		{"GET", "/admin/agents"},
+		{"GET", "/admin/install"},
 
 		// Form POST handlers
 		{"POST", "/files/upload"},
@@ -158,6 +168,8 @@ func TestAllRoutesRegistered(t *testing.T) {
 		{"POST", "/files/123/checkin"},
 		{"POST", "/folders/create"},
 		{"POST", "/admin/users/create"},
+		{"POST", "/admin/install-links/create"},
+		{"POST", "/admin/install-links/99/revoke"},
 		{"POST", "/admin/alerts/rules/create"},
 		{"POST", "/admin/alerts/99/acknowledge"},
 	}
@@ -182,6 +194,8 @@ func TestFormActionsHaveHandlers(t *testing.T) {
 		"/files/upload",
 		"/folders/create",
 		"/admin/users/create",
+		"/admin/install-links/create",
+		"/admin/install-links/1/revoke",
 		"/admin/alerts/rules/create",
 		// Dynamic paths tested with sample IDs
 		"/files/1/checkout",
@@ -198,6 +212,8 @@ func TestFormActionsHaveHandlers(t *testing.T) {
 	r.Post("/files/{fileID}/checkin", noop)
 	r.Post("/folders/create", noop)
 	r.Post("/admin/users/create", noop)
+	r.Post("/admin/install-links/create", noop)
+	r.Post("/admin/install-links/{tokenID}/revoke", noop)
 	r.Post("/admin/alerts/rules/create", noop)
 	r.Post("/admin/alerts/{alertID}/acknowledge", noop)
 

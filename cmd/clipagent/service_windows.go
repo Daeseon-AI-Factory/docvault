@@ -70,6 +70,17 @@ func platformMain() {
 	runMonitor()
 }
 
+func agentRunningMode() string {
+	isService, err := svc.IsWindowsService()
+	if err != nil {
+		return "unknown"
+	}
+	if isService {
+		return "windows_service"
+	}
+	return "interactive_user"
+}
+
 func installService() {
 	exePath, err := os.Executable()
 	if err != nil {

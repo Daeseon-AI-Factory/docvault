@@ -3,13 +3,16 @@ package web
 import (
 	"context"
 	"crypto/md5"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/csv"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -657,6 +660,10 @@ func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	if h.uebaProvider != nil {
 		riskUsers, _ = h.uebaProvider.GetTopRiskUsers(r.Context(), 5)
 	}
+	var onboardingSummary *endpoint.OnboardingSummary
+	if h.endpointRepo != nil {
+		onboardingSummary, _ = h.endpointRepo.OnboardingSummary(r.Context(), 10*time.Minute)
+	}
 
 	data := h.pageData(r, "Dashboard", "dashboard")
 	data["Stats"] = dashStats{stats.TotalEvents, stats.TodayEvents, 0, len(alerts)}
@@ -664,6 +671,7 @@ func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	data["Alerts"] = alerts
 	data["SuspiciousEvents"] = suspiciousEvents
 	data["RiskUsers"] = riskUsers
+	data["OnboardingSummary"] = onboardingSummary
 	renderPage(w, h.tc, "dashboard.html", data)
 }
 
@@ -903,13 +911,21 @@ func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type agentInfo struct {
-		Hostname         string
-		Source           string
-		ReportedUsername string
-		LastIP           string
-		LastCheckin      time.Time
-		EventCount       int64
-		IsOnline         bool
+		Hostname             string
+		Source               string
+		ReportedUsername     string
+		LastIP               string
+		LastCheckin          time.Time
+		EventCount           int64
+		IsOnline             bool
+		AgentVersion         string
+		RunningMode          string
+		SessionUser          string
+		HealthStatus         string
+		ClipboardAvailable   *bool
+		ClipboardError       string
+		LastSelfTestAt       *time.Time
+		LastClipboardEventAt *time.Time
 	}
 
 	regAgents, _ := h.endpointRepo.ListAgents(r.Context())
@@ -922,13 +938,21 @@ func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
 			offlineCount++
 		}
 		agents = append(agents, agentInfo{
-			Hostname:         row.Hostname,
-			Source:           row.Source,
-			ReportedUsername: row.ReportedUsername,
-			LastIP:           row.LastIP,
-			LastCheckin:      row.LastCheckin,
-			EventCount:       row.EventCount,
-			IsOnline:         isOnline,
+			Hostname:             row.Hostname,
+			Source:               row.Source,
+			ReportedUsername:     row.ReportedUsername,
+			LastIP:               row.LastIP,
+			LastCheckin:          row.LastCheckin,
+			EventCount:           row.EventCount,
+			IsOnline:             isOnline,
+			AgentVersion:         row.AgentVersion,
+			RunningMode:          row.RunningMode,
+			SessionUser:          row.SessionUser,
+			HealthStatus:         row.HealthStatus,
+			ClipboardAvailable:   row.ClipboardAvailable,
+			ClipboardError:       row.ClipboardError,
+			LastSelfTestAt:       row.LastSelfTestAt,
+			LastClipboardEventAt: row.LastClipboardEventAt,
 		})
 	}
 
@@ -958,7 +982,102 @@ func (h *PageHandler) InstallPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := h.pageData(r, "에이전트 설치", "admin-install")
+	if allUsers, err := h.userRepo.List(r.Context()); err == nil {
+		data["AllUsers"] = allUsers
+	}
+	if h.endpointRepo != nil {
+		if tokens, err := h.endpointRepo.ListInstallTokens(r.Context(), 20); err == nil {
+			data["InstallTokens"] = tokens
+		}
+		if summary, err := h.endpointRepo.OnboardingSummary(r.Context(), 10*time.Minute); err == nil {
+			data["OnboardingSummary"] = summary
+		}
+	}
+	if created := r.URL.Query().Get("created"); created != "" {
+		data["CreatedInstallLink"] = created
+	}
 	renderPage(w, h.tc, "admin_install.html", data)
+}
+
+func (h *PageHandler) CreateInstallLink(w http.ResponseWriter, r *http.Request) {
+	u, ok := h.requireAdmin(w, r)
+	if !ok {
+		return
+	}
+	if h.endpointRepo == nil {
+		http.Error(w, "endpoint repo unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	var userID *int64
+	if v := strings.TrimSpace(r.FormValue("user_id")); v != "" && v != "0" {
+		uid, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid user_id", http.StatusBadRequest)
+			return
+		}
+		userID = &uid
+	}
+	hours := 72
+	if v := strings.TrimSpace(r.FormValue("expires_hours")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 720 {
+			hours = n
+		}
+	}
+
+	raw, err := randomInstallToken()
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if _, err := h.endpointRepo.CreateInstallToken(r.Context(), raw, userID, u.ID, time.Now().Add(time.Duration(hours)*time.Hour)); err != nil {
+		if h.logger != nil {
+			h.logger.Error("create install token", "error", err)
+		}
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	link := h.serverURL(r) + "/install/" + raw
+	http.Redirect(w, r, "/admin/install?created="+url.QueryEscape(link), http.StatusSeeOther)
+}
+
+func (h *PageHandler) RevokeInstallLink(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "tokenID"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid token ID", http.StatusBadRequest)
+		return
+	}
+	if h.endpointRepo != nil {
+		if err := h.endpointRepo.RevokeInstallToken(r.Context(), id); err != nil && h.logger != nil {
+			h.logger.Error("revoke install token", "id", id, "error", err)
+		}
+	}
+	http.Redirect(w, r, "/admin/install", http.StatusSeeOther)
+}
+
+func (h *PageHandler) EmployeeInstallPage(w http.ResponseWriter, r *http.Request) {
+	raw := strings.TrimSpace(chi.URLParam(r, "token"))
+	var token *endpoint.InstallTokenRow
+	var err error
+	if h.endpointRepo != nil {
+		token, err = h.endpointRepo.GetUsableInstallToken(r.Context(), raw)
+	}
+	if err != nil && h.logger != nil {
+		h.logger.Warn("employee install token lookup", "error", err)
+	}
+	data := map[string]interface{}{
+		"Valid":       token != nil,
+		"DownloadURL": "/install/" + raw + "/download",
+	}
+	if token != nil {
+		data["FullName"] = token.FullName
+		data["Username"] = token.Username
+		data["ExpiresAt"] = token.ExpiresAt
+	}
+	renderStandalone(w, h.tc, "employee_install.html", data)
 }
 
 // installBatTemplate is a one-click Windows installer. __SERVER__/__PSK__ are
@@ -989,6 +1108,7 @@ const installBatTemplate = "@echo off\n" +
 	"  echo @echo off\n" +
 	"  echo set \"DOCVAULT_SERVER_URL=__SERVER__\"\n" +
 	"  echo set \"DOCVAULT_AGENT_PSK=__PSK__\"\n" +
+	"  echo set \"DOCVAULT_INSTALL_TOKEN=__TOKEN__\"\n" +
 	"  echo :loop\n" +
 	"  echo \"C:\\DocVault\\dvclip.exe\"\n" +
 	"  echo timeout /t 5 /nobreak ^>nul\n" +
@@ -1014,17 +1134,53 @@ func (h *PageHandler) AgentInstaller(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.requireAdmin(w, r); !ok {
 		return
 	}
-	scheme := "https"
-	if xfp := r.Header.Get("X-Forwarded-Proto"); xfp != "" {
-		scheme = xfp
+	h.serveInstaller(w, h.serverURL(r), "")
+}
+
+func (h *PageHandler) EmployeeInstaller(w http.ResponseWriter, r *http.Request) {
+	raw := strings.TrimSpace(chi.URLParam(r, "token"))
+	if h.endpointRepo == nil {
+		http.Error(w, "install link unavailable", http.StatusGone)
+		return
 	}
-	serverURL := scheme + "://" + r.Host
+	token, err := h.endpointRepo.GetUsableInstallToken(r.Context(), raw)
+	if err != nil && h.logger != nil {
+		h.logger.Warn("employee installer token lookup", "error", err)
+	}
+	if token == nil {
+		http.Error(w, "install link expired or already used", http.StatusGone)
+		return
+	}
+	if err := h.endpointRepo.MarkInstallTokenDownloaded(r.Context(), token.ID); err != nil && h.logger != nil {
+		h.logger.Warn("mark install token downloaded", "token_id", token.ID, "error", err)
+	}
+	h.serveInstaller(w, h.serverURL(r), raw)
+}
+
+func (h *PageHandler) serveInstaller(w http.ResponseWriter, serverURL, installToken string) {
 	bat := strings.ReplaceAll(installBatTemplate, "__SERVER__", serverURL)
 	bat = strings.ReplaceAll(bat, "__PSK__", h.agentPSK)
+	bat = strings.ReplaceAll(bat, "__TOKEN__", installToken)
 	bat = strings.ReplaceAll(bat, "\n", "\r\n")
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="docvault-install.bat"`)
 	_, _ = w.Write([]byte(bat))
+}
+
+func (h *PageHandler) serverURL(r *http.Request) string {
+	scheme := "https"
+	if xfp := r.Header.Get("X-Forwarded-Proto"); xfp != "" {
+		scheme = xfp
+	}
+	return scheme + "://" + r.Host
+}
+
+func randomInstallToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 func (h *PageHandler) EventsSearchPage(w http.ResponseWriter, r *http.Request) {
