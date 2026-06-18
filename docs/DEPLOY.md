@@ -57,23 +57,28 @@ Log in at `https://<domain>` as `admin` and **change the password immediately** 
 
 This is DocVault's own agent and is the quickest path to a working product.
 
-1. **Build the Windows binary** (on any machine with Go):
+1. **Build and publish the Windows binary** where `/download/dvclip-windows-amd64.exe`
+   can serve it:
 
    ```bash
-   GOOS=windows GOARCH=amd64 go build -o docvault-clip.exe ./cmd/clipagent
+   GOOS=windows GOARCH=amd64 go build -o /vault/agents/dvclip-windows-amd64.exe ./cmd/clipagent
    ```
 
-2. Copy `docvault-clip.exe` and `scripts/install-agent.ps1` to the friend's PC.
+2. Log in as admin and open `/admin/install`.
 
-3. In an **elevated PowerShell** on that PC:
+3. Select the employee and create a one-time Windows install link.
 
-   ```powershell
-   .\install-agent.ps1 -ServerURL "https://docvault.example.com" -AgentPSK "<agent PSK from step 1 of Part 1>"
-   ```
+4. Send only that link to the employee. The employee page shows a download
+   button and Windows warning-dialog steps; it does not show the PSK.
 
-   It copies the binary to `C:\Program Files\DocVault`, sets `DOCVAULT_SERVER_URL` / `DOCVAULT_AGENT_PSK` as machine env vars, and installs + starts the `DocVaultClipAgent` service.
+5. The downloaded `docvault-install.bat` self-elevates, downloads
+   `dvclip.exe`, removes any old LocalSystem service-mode install, creates a
+   per-user hidden Scheduled Task, and starts the agent in the interactive
+   Windows session. Clipboard capture depends on that interactive session.
 
-4. On the server dashboard, confirm the PC appears under **Agents** and clipboard events show up.
+6. On the dashboard, confirm the Windows onboarding queue clears. Under
+   **Agents**, the PC should show `보고중`; after the employee copies anything
+   with Ctrl+C, it should move from capture waiting to `캡처 검증됨`.
 
 The agent buffers events (bounded in-memory queue) and retries with backoff if the server is briefly unreachable, and re-enrolls every 5 minutes — so a dropped connection does not silently lose data.
 

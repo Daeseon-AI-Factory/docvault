@@ -1,0 +1,45 @@
+{{define "employee_install.html"}}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DocVault 설치</title>
+  <style>
+    :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827;background:#f3f4f6}
+    body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    main{width:min(760px,100%);background:#fff;border:1px solid #d1d5db;border-radius:12px;padding:24px;box-shadow:0 18px 48px rgba(15,23,42,.14)}
+    h1{font-size:1.6rem;margin:.1rem 0 .5rem}
+    p{line-height:1.65}
+    .muted{color:#64748b}
+    .btn{display:inline-block;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;padding:13px 18px;font-weight:800}
+    .steps{display:grid;gap:10px;margin:18px 0}
+    .step{border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;background:#f8fafc}
+    .warn{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;color:#92400e}
+    .bad{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;color:#991b1b}
+    code{background:#eef2ff;padding:2px 5px;border-radius:5px}
+  </style>
+</head>
+<body>
+<main>
+  {{if .Valid}}
+    <h1>DocVault Windows 설치</h1>
+    {{if .FullName}}<p class="muted">{{.FullName}} 님 PC에 설치하는 링크입니다.</p>{{end}}
+    <p>아래 버튼으로 설치 파일을 받은 뒤 실행하세요. 설치 파일 안에 필요한 설정이 이미 들어 있습니다.</p>
+    <p><a class="btn" href="{{.DownloadURL}}" download="docvault-install.bat">docvault-install.bat 다운로드</a></p>
+    <div class="steps">
+      <div class="step"><b>1.</b> 받은 <code>docvault-install.bat</code> 파일을 바탕화면에 저장합니다.</div>
+      <div class="step"><b>2.</b> 파일을 더블클릭합니다.</div>
+      <div class="step"><b>3.</b> 경고창이 뜨면 <b>실행</b>, <b>예</b>, <b>추가 정보</b>, <b>실행</b> 순서로 누릅니다.</div>
+      <div class="step"><b>4.</b> 검은 창에 <b>설치 완료</b>가 보이면 끝입니다.</div>
+    </div>
+    <div class="warn">막히는 화면이 나오면 그 화면을 캡처해서 관리자에게 보내주세요.</div>
+    <p class="muted">이 링크는 한 번 설치에 쓰면 재사용할 수 없습니다. 만료되면 관리자에게 새 링크를 요청하세요.</p>
+  {{else}}
+    <h1>설치 링크를 사용할 수 없습니다</h1>
+    <div class="bad">이 링크는 만료됐거나 이미 사용됐습니다. 관리자에게 새 설치 링크를 요청하세요.</div>
+  {{end}}
+</main>
+</body>
+</html>
+{{end}}

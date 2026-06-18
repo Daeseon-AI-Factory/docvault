@@ -8,3 +8,5 @@ func platformMain() {
 	log.Println("DocVault clipboard agent: live capture is supported on Windows and macOS only")
 	runMonitor()
 }
+
+func agentRunningMode() string { return "unsupported" }

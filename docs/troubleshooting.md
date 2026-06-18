@@ -260,3 +260,10 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Commit**: e60a363
 - **Pattern**: when a workflow spans an admin-only secret (the installer) and public instructions, give the operator one in-app page that composes both, rather than scattering the pieces across a status page and an external static file.
 <!-- skipped: 9338d4e Add Windows install-mechanism end-to-end CI test [no-log] -->
+
+## Windows onboarding still required manual delivery, host assignment, and capture verification
+
+- **Symptom**: even after the one-click `.bat`, the admin still had to download a PSK-bearing installer, send it out-of-band, assign the host to the employee after it appeared, and infer whether clipboard capture was actually working by searching endpoint events.
+- **Cause**: installer generation was admin-only and not tied to a user. `endpoint_agents` tracked liveness (`last_checkin`) but not install-token provenance, running mode, self-test time, clipboard API availability, or the last real clipboard event.
+- **Fix**: Added migration `018_windows_onboarding`. `/admin/install` now creates one-time employee install links backed by hashed `install_tokens`; public `/install/{token}` serves a Windows-only employee page and `/install/{token}/download` generates the `.bat` with `DOCVAULT_INSTALL_TOKEN` injected while keeping PSK hidden from the page. The clipagent now posts `/api/agent/self-test` plus the token in enroll/heartbeat/clipboard payloads. Token-backed enroll/self-test auto-assigns the hostname to the selected user. `/admin/agents` and the dashboard show health states: unassigned, offline, capture waiting, capture OK, problem, and service-account suspicion.
+- **Pattern**: onboarding state needs to be first-class product data, not a support checklist. Store the install link, host mapping, self-test result, and real capture evidence so the admin can see "installed" vs "capture verified" without manual searches.

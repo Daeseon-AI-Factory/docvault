@@ -98,6 +98,12 @@ func newTemplateCache() (*templateCache, error) {
 	}
 	tc.cache["login_2fa.html"] = login2faTmpl
 
+	employeeInstallTmpl, err := template.New("employee_install.html").Funcs(funcMap).ParseFS(templateFS, "templates/employee_install.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse employee_install template: %w", err)
+	}
+	tc.cache["employee_install.html"] = employeeInstallTmpl
+
 	return tc, nil
 }
 

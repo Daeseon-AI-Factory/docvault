@@ -140,3 +140,15 @@ func getForegroundWindowTitle() string {
 	procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), 256)
 	return windows.UTF16ToString(buf)
 }
+
+func clipboardProbe() (bool, string) {
+	ret, _, err := procOpenClipboard.Call(0)
+	if ret == 0 {
+		if err != windows.ERROR_SUCCESS {
+			return false, err.Error()
+		}
+		return false, "OpenClipboard returned 0"
+	}
+	procCloseClipboard.Call()
+	return true, ""
+}

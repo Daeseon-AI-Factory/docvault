@@ -1,6 +1,6 @@
 # DocVault — Handoff & Blueprint (for Codex / any new contributor)
 
-_Last updated: 2026-06-17. Source of truth for "where we are and where we're going."_
+_Last updated: 2026-06-18. Source of truth for "where we are and where we're going."_
 
 ## 1. What it is (and isn't)
 
@@ -22,18 +22,22 @@ See `docs/LIMITATIONS.md`.
 - **Stack**: Go 1.26, chi, pgx/PostgreSQL 16, JWT, AES-256-GCM (chunked), DB-trigger hash chain,
   html/template + htmx (SSR, no JS build), `//go:embed` for templates/static/migrations.
 - **Packages** (`internal/`): auth, user, vault, folder, audit, endpoint, alert, agent, insight,
-  monitoring, tracking, ueba, web, config, database. **16 migrations** (001–016).
+  monitoring, tracking, ueba, web, config, database. **18 migrations** (001–018).
 
 ## 3. What this session delivered
 
-- **One-click Windows installer**: admin-only `GET /admin/agent-installer.bat` → self-elevating
-  `.bat` with server URL + PSK baked in; env injected into the service registry `Environment`
-  (REG_MULTI_SZ), read with no reboot. **Verified on real amd64 Windows** via
-  `.github/workflows/win-install-test.yml` (CI run 27661890975: service installs, reads env,
-  enrolls). UAC/SmartScreen clicks remain inherently manual.
-- **In-app install page** `/admin/install` (download + step-by-step visual dialog guide in one),
-  linked from the sidebar (관리자 → 📥 에이전트 설치). Public friend guide at
-  `/download/install-windows.ko.html`; user manual at `/download/manual.ko.html`.
+- **Windows-first onboarding**: admin `/admin/install` creates one-time employee install links
+  (`/install/{token}`) backed by hashed `install_tokens`. The employee page is public and only
+  shows a Windows download button + SmartScreen/UAC steps; PSK stays server-injected in the
+  generated `.bat`.
+- **One-click Windows installer**: the `.bat` self-elevates, removes old LocalSystem service-mode
+  installs, installs a per-user hidden Scheduled Task, and starts `dvclip.exe` inside the
+  interactive Windows session. The agent posts `/api/enroll`, `/api/heartbeat`,
+  `/api/agent/self-test`, and clipboard events with `DOCVAULT_INSTALL_TOKEN` when present.
+- **Automatic mapping + health**: token-backed installs auto-assign the host to the selected
+  employee. `endpoint_agents` now tracks running mode, session user, self-test time, clipboard
+  availability, and last real clipboard event; dashboard/admin agents show unassigned/offline/
+  capture-unverified/problem queues.
 - **Host→employee assignment**, **CSV bulk user import**, **AI assistant** (`internal/agent`:
   OpenAI/Gemini tool-use, read + actions, every action logged to `agent_actions` with one-click
   rollback), **AI security briefing** (`internal/insight`, Anthropic or Gemini).
@@ -55,8 +59,8 @@ Real-Windows agent testing = `windows-latest` CI (dev Mac is Apple-Silicon; no u
 
 | Area | Status |
 |---|---|
-| Friend's actual PC | **Not installed yet** — needs a human to run the `.bat` (UAC/SmartScreen clicks). |
-| Clipboard CAPTURE on a real desktop | **Unverified** — CI proved *enroll/connect* only; capture needs an interactive session. |
+| Friend's actual PC | **Not installed yet** — needs a human to run the link-downloaded `.bat` (UAC/SmartScreen clicks). |
+| Clipboard CAPTURE on real Windows | **CI-covered on `windows-latest`** for Scheduled Task + real `Set-Clipboard`; still verify once on the actual friend PC. |
 | osquery end-to-end | **Unverified** against a live daemon. |
 | AI agent prompt-injection | **Mitigated in app code**: mutating tools now require a server-generated confirmation turn + explicit `실행 승인`. Tool-output fields are still attacker-influenceable and must stay treated as untrusted. |
 | Unit tests for `agent`/`insight` | Added deterministic unit tests for action confirmation and insight provider defaults. Rollback DB integration still needs coverage. |
@@ -66,7 +70,8 @@ Real-Windows agent testing = `windows-latest` CI (dev Mac is Apple-Silicon; no u
 ## 6. Roadmap / direction (prioritized)
 
 **P0 — make it real for the first customer (the friend)**
-1. Get one real Windows PC installed and confirm **events actually flow** (enroll ≠ capture).
+1. Get one real Windows PC installed via `/admin/install` → one-time link and confirm
+   dashboard status reaches **캡처 검증됨** after a Ctrl+C.
 2. Per-agent **"reporting / last seen"** liveness is now based on `endpoint_agents.last_checkin`.
    The clipboard agent sends `/api/heartbeat` every 60 seconds, so idle Windows PCs still show
    as reporting. Remaining: production notification policy for offline alerts.
@@ -77,9 +82,8 @@ Real-Windows agent testing = `windows-latest` CI (dev Mac is Apple-Silicon; no u
 4. More `internal/agent` tests: rollback inverse-state with a real test DB.
 
 **P2 — kill the onboarding friction**
-5. **Code-sign the agent binary** → removes SmartScreen entirely (the #1 non-techie blocker).
-6. **One-time tokenized download link** so the friend self-downloads the personalized installer
-   (no admin-only gate, no `.bat`-by-email problem). Keep the PSK server-side.
+5. **Code-sign the agent binary** → reduces SmartScreen friction (the #1 non-techie blocker).
+   `make sign-windows` now documents the signtool path; a real certificate is still needed.
 
 **P2 — security hardening before any wider exposure**
 7. Finish security at rest: rotate legacy plaintext TOTP secrets, protect recovery codes, verify

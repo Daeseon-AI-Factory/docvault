@@ -20,3 +20,7 @@ func newClipboardMonitor() ClipboardMonitor { return noopMonitor{} }
 type noopMonitor struct{}
 
 func (noopMonitor) Poll() *ClipboardSnapshot { return nil }
+
+func clipboardProbe() (bool, string) {
+	return false, "clipboard capture is only implemented on Windows and macOS"
+}

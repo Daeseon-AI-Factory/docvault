@@ -1,0 +1,49 @@
+---
+title: "Windows-first onboarding: one-time links, auto assignment, and capture health"
+date: "2026-06-18"
+project: "docvault"
+kind: "implementation-log"
+visibility: "public"
+language: "en"
+summary: "Moved DocVault agent onboarding from admin-delivered installers and manual host assignment toward one-time employee links with automatic mapping and visible clipboard capture health."
+tags: ["windows", "onboarding", "agent", "ux", "endpoint"]
+---
+
+## Problem
+
+The previous one-click installer removed the PSK copy-paste trap, but onboarding still depended on manual operations:
+
+- an admin had to download and deliver the installer;
+- after install, the admin had to assign the hostname to the employee;
+- heartbeat showed liveness, but not whether clipboard capture was actually working;
+- the admin had to search events to distinguish "installed" from "capture verified."
+
+For a Windows-first user base, this is too much operational guessing.
+
+## Change
+
+Added a first-class install-token flow:
+
+- `/admin/install` creates one-time employee install links.
+- Public `/install/{token}` shows a minimal Windows employee page with only the installer download and SmartScreen/UAC steps.
+- `/install/{token}/download` generates the `.bat` with server URL, PSK, and `DOCVAULT_INSTALL_TOKEN` injected. The PSK is not shown on the page.
+- `install_tokens` stores only SHA-256 token hashes, target user, expiry, download time, and used host.
+- clipagent includes the install token in enroll, heartbeat, self-test, and clipboard payloads.
+- `/api/agent/self-test` records running mode, session user, clipboard availability, and self-test time.
+- real clipboard events mark the agent as `capture_ok`.
+- `/admin/agents` and the dashboard expose onboarding queues: unassigned, capture-unverified, offline, problem, and active links.
+
+## Verification
+
+Local verification in this session:
+
+- `go test -count=1 ./internal/endpoint/`
+- `go test -count=1 ./internal/web/`
+- `go build ./...`
+- `go test -count=1 ./cmd/clipagent`
+
+The Windows GitHub Actions smoke workflow was updated to require `/api/agent/self-test` and `install_token` payload evidence in addition to enroll, heartbeat, and real clipboard events. It still needs to be run on `windows-latest` after pushing the workflow branch.
+
+## Remaining
+
+Code signing is still the main Windows friction reducer. `make sign-windows` now documents the signtool path, but a real certificate and Windows runner secrets are required before SmartScreen friction can be meaningfully reduced.

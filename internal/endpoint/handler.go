@@ -258,12 +258,23 @@ func (h *Handler) ReceiveClipboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := h.autoResolveEndpointUserID(r.Context(), ce.Username)
+	userID, tokenID, err := h.userIDFromInstallToken(r.Context(), ce.InstallToken)
+	if err != nil && h.logger != nil {
+		h.logger.Warn("resolve clipboard install token", "hostname", ce.Hostname, "error", err)
+	}
+	if userID == nil {
+		userID, err = h.autoResolveEndpointUserID(r.Context(), ce.Username)
+	}
 	if err != nil && h.logger != nil {
 		h.logger.Warn("auto resolve clipboard user", "hostname", ce.Hostname, "username", ce.Username, "error", err)
 	}
 	if err := h.repo.TouchAgent(r.Context(), ce.Hostname, "clipboard", ce.Username, clientIP(r)); err != nil {
 		h.logger.Warn("touch clipboard agent", "hostname", ce.Hostname, "error", err)
+	}
+	if tokenID != nil {
+		if err := h.attachInstallTokenToHost(r.Context(), *tokenID, ce.Hostname, "clipboard"); err != nil && h.logger != nil {
+			h.logger.Warn("attach clipboard install token", "hostname", ce.Hostname, "token_id", *tokenID, "error", err)
+		}
 	}
 	h.assignEndpointAgentIfUnassigned(r.Context(), ce.Hostname, userID)
 	hostnameMap := h.buildHostnameMap(r.Context(), []string{ce.Hostname})
@@ -289,6 +300,9 @@ func (h *Handler) ReceiveClipboard(w http.ResponseWriter, r *http.Request) {
 			EventTime: event.EventTime,
 		})
 	}
+	if err := h.repo.RecordClipboardCapture(r.Context(), ce.Hostname); err != nil && h.logger != nil {
+		h.logger.Warn("record clipboard capture", "hostname", ce.Hostname, "error", err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok"})
@@ -302,9 +316,10 @@ func (h *Handler) ReceiveHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Hostname string `json:"hostname"`
-		Username string `json:"username"`
-		Source   string `json:"source"`
+		Hostname     string `json:"hostname"`
+		Username     string `json:"username"`
+		Source       string `json:"source"`
+		InstallToken string `json:"install_token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -327,7 +342,13 @@ func (h *Handler) ReceiveHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := h.autoResolveEndpointUserID(r.Context(), req.Username)
+	userID, tokenID, err := h.userIDFromInstallToken(r.Context(), req.InstallToken)
+	if err != nil && h.logger != nil {
+		h.logger.Warn("resolve heartbeat install token", "hostname", req.Hostname, "error", err)
+	}
+	if userID == nil {
+		userID, err = h.autoResolveEndpointUserID(r.Context(), req.Username)
+	}
 	if err != nil && h.logger != nil {
 		h.logger.Warn("auto resolve heartbeat user", "hostname", req.Hostname, "username", req.Username, "error", err)
 	}
@@ -337,6 +358,11 @@ func (h *Handler) ReceiveHeartbeat(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
+	}
+	if tokenID != nil {
+		if err := h.attachInstallTokenToHost(r.Context(), *tokenID, req.Hostname, req.Source); err != nil && h.logger != nil {
+			h.logger.Warn("attach heartbeat install token", "hostname", req.Hostname, "token_id", *tokenID, "error", err)
+		}
 	}
 	h.assignEndpointAgentIfUnassigned(r.Context(), req.Hostname, userID)
 
@@ -354,9 +380,10 @@ func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Hostname string `json:"hostname"`
-		Username string `json:"username"`
-		Source   string `json:"source"` // "osquery" or "clipboard"
+		Hostname     string `json:"hostname"`
+		Username     string `json:"username"`
+		Source       string `json:"source"` // "osquery" or "clipboard"
+		InstallToken string `json:"install_token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -371,13 +398,20 @@ func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 		req.Source = "osquery"
 	}
 
-	userID, err := h.autoResolveEndpointUserID(r.Context(), req.Username)
+	userID, tokenID, err := h.userIDFromInstallToken(r.Context(), req.InstallToken)
+	if err != nil && h.logger != nil {
+		h.logger.Warn("resolve enroll install token", "hostname", req.Hostname, "error", err)
+	}
+	if userID == nil {
+		userID, err = h.autoResolveEndpointUserID(r.Context(), req.Username)
+	}
 	if err != nil && h.logger != nil {
 		h.logger.Warn("auto resolve enrolled user", "hostname", req.Hostname, "username", req.Username, "error", err)
 	}
 
 	// Upsert endpoint_agents
-	_, err = h.db.Exec(r.Context(),
+	var agentID int64
+	err = h.db.QueryRow(r.Context(),
 		`INSERT INTO endpoint_agents (hostname, user_id, source, reported_username, last_ip, last_checkin)
 		 VALUES ($1, $2, $3, $4, $5, NOW())
 		 ON CONFLICT (hostname, source)
@@ -385,13 +419,25 @@ func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 		               reported_username = COALESCE(NULLIF($4, ''), endpoint_agents.reported_username),
 		               last_ip = COALESCE(NULLIF($5, ''), endpoint_agents.last_ip),
 		               last_checkin = NOW(),
-		               is_active = true`,
+		               is_active = true
+		 RETURNING id`,
 		req.Hostname, userID, req.Source, req.Username, clientIP(r),
-	)
+	).Scan(&agentID)
 	if err != nil {
 		h.logger.Error("enroll agent", "error", err)
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
+	}
+	if tokenID != nil {
+		if err := h.repo.MarkInstallTokenUsed(r.Context(), *tokenID, req.Hostname, agentID); err != nil && h.logger != nil {
+			h.logger.Warn("mark install token used", "hostname", req.Hostname, "token_id", *tokenID, "error", err)
+		}
+		if _, err := h.db.Exec(r.Context(),
+			`UPDATE endpoint_agents SET install_token_id = COALESCE(install_token_id, $2) WHERE hostname = $1`,
+			req.Hostname, *tokenID,
+		); err != nil && h.logger != nil {
+			h.logger.Warn("store install token on agent", "hostname", req.Hostname, "token_id", *tokenID, "error", err)
+		}
 	}
 
 	h.logger.Info("agent enrolled", "hostname", req.Hostname, "source", req.Source, "user_id", userID)
@@ -401,6 +447,119 @@ func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 		"status":   "enrolled",
 		"hostname": req.Hostname,
 	})
+}
+
+// ReceiveSelfTest handles POST /api/agent/self-test. It records whether the
+// Windows agent is running in an interactive user context and whether clipboard
+// APIs are reachable; a later real clipboard event upgrades the status to
+// capture_ok.
+func (h *Handler) ReceiveSelfTest(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePSK(w, r, "X-Agent-PSK") {
+		return
+	}
+
+	var req struct {
+		Hostname           string `json:"hostname"`
+		Username           string `json:"username"`
+		Source             string `json:"source"`
+		InstallToken       string `json:"install_token"`
+		AgentVersion       string `json:"agent_version"`
+		RunningMode        string `json:"running_mode"`
+		SessionUser        string `json:"session_user"`
+		ClipboardAvailable bool   `json:"clipboard_available"`
+		ClipboardError     string `json:"clipboard_error"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Hostname == "" {
+		http.Error(w, `{"error":"hostname is required"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Source == "" {
+		req.Source = "clipboard"
+	}
+	if req.Source != "clipboard" && req.Source != "osquery" {
+		http.Error(w, `{"error":"invalid source"}`, http.StatusBadRequest)
+		return
+	}
+
+	userID, tokenID, err := h.userIDFromInstallToken(r.Context(), req.InstallToken)
+	if err != nil && h.logger != nil {
+		h.logger.Warn("resolve self-test install token", "hostname", req.Hostname, "error", err)
+	}
+	if userID == nil {
+		userID, err = h.autoResolveEndpointUserID(r.Context(), req.Username)
+	}
+	if err != nil && h.logger != nil {
+		h.logger.Warn("auto resolve self-test user", "hostname", req.Hostname, "username", req.Username, "error", err)
+	}
+
+	status := "capture_waiting"
+	if !req.ClipboardAvailable {
+		status = "problem"
+	}
+	agentID, err := h.repo.UpdateAgentHealth(r.Context(), AgentHealthUpdate{
+		Hostname:           req.Hostname,
+		Source:             req.Source,
+		Username:           req.Username,
+		LastIP:             clientIP(r),
+		InstallTokenID:     tokenID,
+		AgentVersion:       req.AgentVersion,
+		RunningMode:        req.RunningMode,
+		SessionUser:        req.SessionUser,
+		HealthStatus:       status,
+		ClipboardAvailable: req.ClipboardAvailable,
+		ClipboardError:     req.ClipboardError,
+	})
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("self-test update agent health", "hostname", req.Hostname, "error", err)
+		}
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		return
+	}
+	h.assignEndpointAgentIfUnassigned(r.Context(), req.Hostname, userID)
+	if tokenID != nil {
+		if err := h.repo.MarkInstallTokenUsed(r.Context(), *tokenID, req.Hostname, agentID); err != nil && h.logger != nil {
+			h.logger.Warn("mark self-test install token used", "hostname", req.Hostname, "token_id", *tokenID, "error", err)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":        "ok",
+		"health_status": status,
+		"hostname":      req.Hostname,
+	})
+}
+
+func (h *Handler) userIDFromInstallToken(ctx context.Context, rawToken string) (*int64, *int64, error) {
+	if h == nil || h.repo == nil || strings.TrimSpace(rawToken) == "" {
+		return nil, nil, nil
+	}
+	token, err := h.repo.GetUsableInstallToken(ctx, strings.TrimSpace(rawToken))
+	if err != nil || token == nil {
+		return nil, nil, err
+	}
+	return token.UserID, &token.ID, nil
+}
+
+func (h *Handler) attachInstallTokenToHost(ctx context.Context, tokenID int64, hostname, source string) error {
+	if h == nil || h.db == nil || hostname == "" {
+		return nil
+	}
+	if source == "" {
+		source = "clipboard"
+	}
+	_, err := h.db.Exec(ctx,
+		`UPDATE endpoint_agents
+		 SET install_token_id = COALESCE(install_token_id, $3)
+		 WHERE hostname = $1 AND source = $2`,
+		hostname, source, tokenID,
+	)
+	return err
 }
 
 func (h *Handler) autoResolveEndpointUserID(ctx context.Context, reportedUsername string) (*int64, error) {

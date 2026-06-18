@@ -7,14 +7,15 @@ import (
 
 // ClipboardEvent represents a clipboard monitoring event from the agent.
 type ClipboardEvent struct {
-	Hostname    string `json:"hostname"`
-	Username    string `json:"username"`
-	Action      string `json:"action"`       // "copy" or "paste"
-	Application string `json:"application"`   // process name (e.g., "KakaoTalk.exe")
-	ContentType string `json:"content_type"`  // "text", "files", "image"
-	ContentSize int    `json:"content_size"`
-	WindowTitle string `json:"window_title"`  // full window title for context
-	Timestamp   string `json:"timestamp"`
+	Hostname     string `json:"hostname"`
+	Username     string `json:"username"`
+	Action       string `json:"action"`       // "copy" or "paste"
+	Application  string `json:"application"`  // process name (e.g., "KakaoTalk.exe")
+	ContentType  string `json:"content_type"` // "text", "files", "image"
+	ContentSize  int    `json:"content_size"`
+	WindowTitle  string `json:"window_title"` // full window title for context
+	Timestamp    string `json:"timestamp"`
+	InstallToken string `json:"install_token,omitempty"`
 }
 
 // NormalizeClipboardEvent converts a clipboard event into an EndpointEvent.
