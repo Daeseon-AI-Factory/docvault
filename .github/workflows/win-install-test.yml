@@ -1,10 +1,9 @@
 name: win-install-test
 
-# Real amd64 Windows end-to-end test of the one-click installer mechanism:
-# does writing env into the service's registry Environment (REG_MULTI_SZ) make
-# the running service actually read DOCVAULT_SERVER_URL / DOCVAULT_AGENT_PSK and
-# connect? Proven behaviorally: point the service at a local listener and watch
-# for enroll + heartbeat POSTs (with the PSK header) on the configured port.
+# Real amd64 Windows end-to-end test of the current one-click installer model.
+# The installer must remove the old LocalSystem service-mode install, create a
+# per-user Scheduled Task, run the agent in the interactive user context, and
+# successfully post enroll, heartbeat, and clipboard events.
 
 on:
   push:
@@ -21,7 +20,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: One-click installer end-to-end (registry Environment -> service connect)
+      - name: One-click installer end-to-end (Scheduled Task + clipboard)
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -30,27 +29,34 @@ jobs:
           go build -o dvclip.exe ./cmd/clipagent
           if ($LASTEXITCODE -ne 0) { throw "agent build failed" }
 
-          Write-Host "=== build local listener (9099 = configured URL, 8080 = agent default) ==="
-          $src = @(
-            'package main',
-            'import ("fmt"; "net/http"; "os")',
-            'func handler(port string, f *os.File) http.HandlerFunc {',
-            '  return func(w http.ResponseWriter, r *http.Request) {',
-            '    f.WriteString(fmt.Sprintf("HIT port=%s method=%s path=%s psk=%s\n", port, r.Method, r.URL.Path, r.Header.Get("X-Agent-PSK")))',
-            '    f.Sync()',
-            '    w.WriteHeader(200)',
-            '    w.Write([]byte("ok"))',
-            '  }',
-            '}',
-            'func main() {',
-            '  f, _ := os.Create("listener.log")',
-            '  m1 := http.NewServeMux(); m1.HandleFunc("/", handler("9099", f))',
-            '  m2 := http.NewServeMux(); m2.HandleFunc("/", handler("8080", f))',
-            '  go http.ListenAndServe("127.0.0.1:9099", m1)',
-            '  go http.ListenAndServe("127.0.0.1:8080", m2)',
-            '  select {}',
-            '}'
-          ) -join "`n"
+          Write-Host "=== build local listener ==="
+          $src = @'
+          package main
+
+          import (
+            "fmt"
+            "io"
+            "net/http"
+            "os"
+          )
+
+          func handler(port string, f *os.File) http.HandlerFunc {
+            return func(w http.ResponseWriter, r *http.Request) {
+              body, _ := io.ReadAll(r.Body)
+              f.WriteString(fmt.Sprintf("HIT port=%s method=%s path=%s psk=%s body=%s\n", port, r.Method, r.URL.Path, r.Header.Get("X-Agent-PSK"), string(body)))
+              f.Sync()
+              w.WriteHeader(200)
+              w.Write([]byte("ok"))
+            }
+          }
+
+          func main() {
+            f, _ := os.Create("listener.log")
+            mux := http.NewServeMux()
+            mux.HandleFunc("/", handler("9099", f))
+            http.ListenAndServe("127.0.0.1:9099", mux)
+          }
+          '@
           Set-Content -Path listener.go -Value $src -Encoding ascii
           go build -o listener.exe listener.go
           if ($LASTEXITCODE -ne 0) { throw "listener build failed" }
@@ -58,48 +64,116 @@ jobs:
           $listener = Start-Process -FilePath .\listener.exe -PassThru -WindowStyle Hidden
           Start-Sleep -Seconds 2
 
-          Write-Host "=== install service (same as the .bat) ==="
-          .\dvclip.exe install
-          if ($LASTEXITCODE -ne 0) { throw "service install failed" }
+          $installDir = "C:\DocVault"
+          $runCmd = "C:\DocVault\run-docvault-agent.cmd"
+          $runVbs = "C:\DocVault\run-docvault-agent.vbs"
 
-          Write-Host "=== inject env via service registry Environment (the risky bit) ==="
-          reg add "HKLM\SYSTEM\CurrentControlSet\Services\DocVaultClipAgent" /v Environment /t REG_MULTI_SZ /d 'DOCVAULT_SERVER_URL=http://127.0.0.1:9099\0DOCVAULT_AGENT_PSK=ci-test-psk-123' /f
-          reg query "HKLM\SYSTEM\CurrentControlSet\Services\DocVaultClipAgent" /v Environment
+          try {
+            Write-Host "=== prepare C:\DocVault ==="
+            New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+            Copy-Item .\dvclip.exe "$installDir\dvclip.exe" -Force
+            Unblock-File "$installDir\dvclip.exe"
 
-          Write-Host "=== start service ==="
-          net start DocVaultClipAgent
-          Start-Sleep -Seconds 15
+            Write-Host "=== preinstall old service so the installer proves it removes service-mode installs ==="
+            & "$installDir\dvclip.exe" install
+            if ($LASTEXITCODE -ne 0) { throw "old service install failed" }
+            sc.exe query DocVaultClipAgent
 
-          Write-Host "=== sc query ==="
-          sc.exe query DocVaultClipAgent
+            Write-Host "=== run the same cleanup + scheduled-task install shape as docvault-install.bat ==="
+            cmd /c "net stop DocVaultClipAgent" 2>$null | Out-Null
+            & "$installDir\dvclip.exe" uninstall 2>$null | Out-Null
 
-          Write-Host "=== listener.log ==="
-          $log = ""
-          if (Test-Path listener.log) { $log = Get-Content listener.log -Raw; Write-Host $log } else { Write-Host "(no listener.log)" }
+            sc.exe query DocVaultClipAgent *> sc-after-uninstall.txt
+            $scAfter = Get-Content sc-after-uninstall.txt -Raw
+            if ($scAfter -match "STATE") {
+              throw "old DocVaultClipAgent service still exists after installer cleanup"
+            }
+            Write-Host "PASS: old service-mode install removed"
 
-          Write-Host "=== cleanup ==="
-          cmd /c "net stop DocVaultClipAgent" 2>$null | Out-Null
-          .\dvclip.exe uninstall 2>$null | Out-Null
-          if ($listener) { Stop-Process -Id $listener.Id -Force -ErrorAction SilentlyContinue }
+            @(
+              '@echo off',
+              'set "DOCVAULT_SERVER_URL=http://127.0.0.1:9099"',
+              'set "DOCVAULT_AGENT_PSK=ci-test-psk-123"',
+              ':loop',
+              '"C:\DocVault\dvclip.exe"',
+              'timeout /t 5 /nobreak >nul',
+              'goto loop'
+            ) | Set-Content -Path $runCmd -Encoding ascii
 
-          Write-Host "================ VERDICT ================"
-          $pass = $true
-          if ($log -match "port=9099 method=POST path=/api/enroll") {
-            Write-Host "PASS: service read DOCVAULT_SERVER_URL from registry Environment (enroll hit 127.0.0.1:9099/api/enroll)"
-          } elseif ($log -match "port=8080") {
-            Write-Host "FAIL: service used the DEFAULT url :8080 - registry Environment was NOT read"; $pass = $false
-          } else {
-            Write-Host "FAIL: no enroll request seen - service did not connect at all"; $pass = $false
+            @(
+              'Set WshShell = CreateObject("WScript.Shell")',
+              'WshShell.Run "cmd.exe /c ""C:\DocVault\run-docvault-agent.cmd""", 0, False'
+            ) | Set-Content -Path $runVbs -Encoding ascii
+
+            schtasks /Delete /TN "DocVaultClipAgent" /F 2>$null | Out-Null
+            schtasks /Create /TN "DocVaultClipAgent" /SC ONLOGON /TR "wscript.exe C:\DocVault\run-docvault-agent.vbs" /RL LIMITED /F
+            if ($LASTEXITCODE -ne 0) { throw "scheduled task create failed" }
+            schtasks /Run /TN "DocVaultClipAgent"
+            if ($LASTEXITCODE -ne 0) { throw "scheduled task run failed" }
+            schtasks /Query /TN "DocVaultClipAgent" /V /FO LIST
+
+            Write-Host "=== create real clipboard activity in the same Windows user session ==="
+            $clipText = "docvault-ci-clipboard-$([guid]::NewGuid())"
+            Set-Clipboard -Value $clipText
+
+            Write-Host "=== wait for enroll + heartbeat + clipboard event ==="
+            $deadline = (Get-Date).AddSeconds(40)
+            $log = ""
+            do {
+              Start-Sleep -Seconds 1
+              if (Test-Path listener.log) {
+                $log = Get-Content listener.log -Raw
+              }
+              if (($log -match "path=/api/enroll") -and ($log -match "path=/api/heartbeat") -and ($log -match "path=/api/events/clipboard")) {
+                break
+              }
+            } while ((Get-Date) -lt $deadline)
+
+            Write-Host "=== listener.log ==="
+            if ($log) { Write-Host $log } else { Write-Host "(empty)" }
+
+            Write-Host "================ VERDICT ================"
+            $pass = $true
+            if ($log -match "port=9099 method=POST path=/api/enroll") {
+              Write-Host "PASS: Scheduled Task agent posted /api/enroll to configured URL"
+            } else {
+              Write-Host "FAIL: no enroll request seen"; $pass = $false
+            }
+            if ($log -match "port=9099 method=POST path=/api/heartbeat") {
+              Write-Host "PASS: Scheduled Task agent posted /api/heartbeat"
+            } else {
+              Write-Host "FAIL: no heartbeat request seen"; $pass = $false
+            }
+            if ($log -match "port=9099 method=POST path=/api/events/clipboard") {
+              Write-Host "PASS: real Windows clipboard change produced /api/events/clipboard"
+            } else {
+              Write-Host "FAIL: no clipboard event request seen"; $pass = $false
+            }
+            if ($log -match "psk=ci-test-psk-123") {
+              Write-Host "PASS: PSK was sent in X-Agent-PSK"
+            } else {
+              Write-Host "FAIL: PSK header missing"; $pass = $false
+            }
+            if ($log -match '"username":"([^"]+)"') {
+              $reportedUser = $Matches[1]
+              Write-Host "reported username: $reportedUser"
+              if ($reportedUser.EndsWith('$')) {
+                Write-Host "FAIL: agent is still running as a machine/service account"; $pass = $false
+              } else {
+                Write-Host "PASS: agent is running as an interactive Windows user"
+              }
+            } else {
+              Write-Host "FAIL: username missing from enroll payload"; $pass = $false
+            }
+            if (-not $pass) { throw "current Windows installer flow FAILED" }
+            Write-Host "ALL CHECKS PASSED - current one-click Windows installer flow works"
+          } finally {
+            Write-Host "=== cleanup ==="
+            schtasks /Delete /TN "DocVaultClipAgent" /F 2>$null | Out-Null
+            cmd /c "net stop DocVaultClipAgent" 2>$null | Out-Null
+            & "$installDir\dvclip.exe" uninstall 2>$null | Out-Null
+            Get-Process dvclip -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-CimInstance Win32_Process -Filter "name = 'wscript.exe'" | Where-Object { $_.CommandLine -like '*run-docvault-agent.vbs*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }
+            Get-CimInstance Win32_Process -Filter "name = 'cmd.exe'" | Where-Object { $_.CommandLine -like '*run-docvault-agent.cmd*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }
+            if ($listener) { Stop-Process -Id $listener.Id -Force -ErrorAction SilentlyContinue }
           }
-          if ($log -match "port=9099 method=POST path=/api/heartbeat") {
-            Write-Host "PASS: service sent heartbeat, so idle PCs update last_checkin without clipboard activity"
-          } else {
-            Write-Host "FAIL: no heartbeat request seen - liveness loop did not run"; $pass = $false
-          }
-          if ($log -match "psk=ci-test-psk-123") {
-            Write-Host "PASS: service read DOCVAULT_AGENT_PSK from registry Environment (X-Agent-PSK header present)"
-          } else {
-            Write-Host "FAIL: PSK not read / not sent in header"; $pass = $false
-          }
-          if (-not $pass) { throw "one-click installer mechanism test FAILED" }
-          Write-Host "ALL CHECKS PASSED - the one-click installer mechanism works on real Windows"
