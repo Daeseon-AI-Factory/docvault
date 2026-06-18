@@ -28,17 +28,31 @@
     </span>
   </div>
   <div id="ai-brief-body" style="padding:1rem;white-space:pre-wrap;line-height:1.7;">
-    <span class="text-muted">버튼을 누르면 AI가 최근 활동을 요약·분석해 위험도와 점검 포인트를 알려줍니다.</span>
+    <span class="text-muted">처음이면 위 <b>최근 24시간 브리핑</b>부터 누르세요. AI가 “오늘 위험한 일 / 누가 관련됐는지 / 지금 뭘 확인해야 하는지” 순서로 정리합니다.</span>
   </div>
   <div style="border-top:1px solid #e2e8f0;padding:0.8rem 1rem;">
-    <div style="font-weight:600;margin-bottom:.5rem;">💬 AI 비서에게 질문 / Ask the assistant</div>
+    <div style="font-weight:700;margin-bottom:.35rem;">💬 AI 비서에게 질문 / Ask the assistant</div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:.7rem .8rem;margin-bottom:.7rem;">
+      <div style="font-weight:700;margin-bottom:.45rem;">초보용 바로 질문</div>
+      <div style="display:flex;gap:.45rem;flex-wrap:wrap;">
+        <button type="button" class="btn btn-sm btn-outline" onclick="docvaultAskText('오늘 위험한 활동을 초보자도 이해하게 요약해줘. 누가, 어떤 PC에서, 뭘 했는지 표로 알려줘.')">오늘 위험 요약</button>
+        <button type="button" class="btn btn-sm btn-outline" onclick="docvaultAskText('지금 설치된 PC 목록을 보고, 정상/문제/미지정 PC를 나눠서 알려줘. OS User가 $로 끝나는 PC도 표시해줘.')">PC 설치 상태</button>
+        <button type="button" class="btn btn-sm btn-outline" onclick="docvaultAskText('미지정 PC가 있으면 어떤 호스트인지, 마지막 IP와 마지막 보고 시간을 알려줘.')">미지정 PC 찾기</button>
+        <button type="button" class="btn btn-sm btn-outline" onclick="docvaultAskText('최근 클립보드 복사 이벤트를 호스트별로 정리해줘. 이벤트가 없으면 없다고 말해줘.')">클립보드 이벤트</button>
+        <button type="button" class="btn btn-sm btn-outline" onclick="docvaultAskText('내가 지금 바로 해야 할 일을 1번부터 순서대로 알려줘.')">지금 할 일</button>
+      </div>
+      <div class="text-muted" style="font-size:.78rem;margin-top:.45rem;">버튼을 누르면 바로 질문됩니다. 직접 입력해도 됩니다. 예: “기민철 PC 왜 감지 안 돼?”</div>
+    </div>
     <div id="ai-chat-log" style="max-height:340px;overflow:auto;display:flex;flex-direction:column;gap:.5rem;margin-bottom:.6rem;"></div>
     <form id="ai-chat-form" style="display:flex;gap:.5rem;" onsubmit="return docvaultAsk(event)">
       <input id="ai-chat-input" class="form-control" autocomplete="off" style="flex:1;"
-        placeholder="예: 오늘 위험한 활동 있었어? / USB로 파일 빼간 사람? / 미배정 PC 알려줘">
+        placeholder="그냥 말로 쓰세요. 예: 기민철 PC 왜 감지 안 돼? / 누가 파일 복사했어?">
       <button type="submit" class="btn btn-primary">보내기</button>
     </form>
-    <div class="text-muted" style="font-size:.78rem;margin-top:.4rem;">조회뿐 아니라 <b>사용자 생성·호스트 배정·경보 확인</b>도 시킬 수 있습니다. 상태 변경은 실행 전 <b>실행 승인</b> 확인이 필요하고, 모든 행동은 아래에서 <b>되돌리기</b> 가능합니다.</div>
+    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:.55rem .7rem;margin-top:.55rem;color:#9a3412;font-size:.82rem;">
+      <b>중요:</b> AI가 “직원 만들기/PC 담당자 지정/알림 확인”처럼 실제 변경을 하려면 먼저 확인을 물어봅니다.
+      내용이 맞을 때만 <code>실행 승인</code>이라고 입력하세요. 잘못 실행한 작업은 아래 <b>최근 AI 작업</b>에서 되돌릴 수 있습니다.
+    </div>
   </div>
 </div>
 
@@ -72,8 +86,16 @@ function docvaultEsc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'
 var docvaultHist=[];
 function docvaultAsk(e){
   e.preventDefault();
+  return docvaultSendQuestion((document.getElementById('ai-chat-input').value||'').trim());
+}
+function docvaultAskText(q){
+  var inp=document.getElementById('ai-chat-input');
+  if(inp) inp.value=q;
+  return docvaultSendQuestion(q);
+}
+function docvaultSendQuestion(q){
   var inp=document.getElementById('ai-chat-input'), log=document.getElementById('ai-chat-log');
-  var q=(inp.value||'').trim(); if(!q) return false;
+  q=(q||'').trim(); if(!q) return false;
   inp.value=''; inp.disabled=true;
   log.insertAdjacentHTML('beforeend','<div style="align-self:flex-end;background:#2563eb;color:#fff;padding:.5rem .8rem;border-radius:12px 12px 2px 12px;max-width:85%;">'+docvaultEsc(q)+'</div>');
   var think=document.createElement('div');
