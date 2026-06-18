@@ -29,7 +29,7 @@ echo "==> branch: $(git branch --show-current)   HEAD: $(git rev-parse --short H
 echo "==> rsync -> ${DOCVAULT_DEPLOY_HOST}:${DOCVAULT_DEPLOY_SRC}"
 rsync -az --delete \
   --exclude='.git' --exclude='bin' --exclude='claude_review' --exclude='codex_review' \
-  --exclude='content' --exclude='*.png' --exclude='*.docx' --exclude='server' \
+  --exclude='content' --exclude='*.png' --exclude='*.docx' --exclude='/server' \
   -e "${SSH}" ./ "${DOCVAULT_DEPLOY_HOST}:${DOCVAULT_DEPLOY_SRC}/"
 
 echo "==> build + recreate + prune (on box)"
