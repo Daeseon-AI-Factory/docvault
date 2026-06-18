@@ -1,0 +1,69 @@
+---
+title: "Demo login and live isolated portfolio deployment"
+date: "2026-06-18"
+project: "docvault"
+kind: "implementation-log"
+visibility: "public"
+language: "en"
+summary: "Added a demo-only Try Demo login button, deployed the isolated English portfolio instance to a real server, and fixed the deploy rsync pattern that accidentally removed cmd/server."
+tags: ["demo", "deployment", "portfolio", "caddy", "docker"]
+---
+
+## Problem
+
+The portfolio demo needed to be usable without giving reviewers a password or mixing sample data
+with the real product/friend instance.
+
+The earlier demo stack solved the database isolation problem, but the login experience was still
+awkward for a portfolio link: the reviewer needed credentials, and the final public deployment had
+not been verified end to end.
+
+## Change
+
+Added a demo-only trial login flow:
+
+- `DOCVAULT_DEMO_LOGIN_ENABLED=true` renders a separate **Try Demo** button on `/login`.
+- `DOCVAULT_DEMO_LOGIN_USERNAME` controls which seeded demo user is signed in.
+- The normal product instance leaves the flag unset, so no trial button is shown there.
+- The button signs into the demo account without exposing the demo password.
+
+Then deployed the isolated portfolio instance to the shared NCP box as its own Compose project:
+
+- source: `/opt/docvault-demo-src`
+- Compose project: `docvault-demo`
+- separate Postgres/vault volumes from the product instance
+- public URL: `https://docvault-demo.223.130.161.55.sslip.io/login`
+- Caddy reverse proxy points to `docvault-demo-server-1:8080`
+
+During deployment, the rsync exclude pattern `--exclude='server'` accidentally removed
+`cmd/server` from the remote source tree. The fix was to exclude only the root-level build artifact:
+`--exclude='/server'`. Both product and demo deploy scripts were patched.
+
+## Verification
+
+Code and CI:
+
+- `go test -count=1 ./...`
+- `go vet ./...`
+- GitHub PR #7: demo login button, merged after `test`, `windows`, and GitGuardian checks passed
+- GitHub PR #8: deploy rsync fix, merged after the same checks passed
+
+Local demo:
+
+- rebuilt with `docker compose --env-file .env.demo -f docker-compose.yml -f docker-compose.demo.yml up -d --build`
+- `/health` returned 200
+- `/login` rendered `Portfolio Demo`, English default language, and **Try Demo**
+- `POST /login/demo` returned 303 to `/dashboard` with secure session cookies
+
+Live demo:
+
+- `https://docvault-demo.223.130.161.55.sslip.io/health` returned 200
+- `POST /login/demo` returned 303 to `/dashboard`
+- subsequent `/dashboard` request with the issued cookies returned 200
+- seed data exists in the isolated DB: users 4, agents 5, endpoint events 5, alerts 3
+- existing product instance `https://docvault.daeseon.ai/health` still returned 200
+
+## Remaining
+
+The branded demo domain `demo-docvault.daeseon.ai` still needs a DNS A record pointing to
+`223.130.161.55`. Until then, the `sslip.io` URL is the working public demo link.
