@@ -373,7 +373,8 @@ func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 	_, err := h.db.Exec(r.Context(),
 		`INSERT INTO endpoint_agents (hostname, user_id, source, last_checkin)
 		 VALUES ($1, $2, $3, NOW())
-		 ON CONFLICT (hostname, source) DO UPDATE SET user_id = $2, last_checkin = NOW(), is_active = true`,
+		 ON CONFLICT (hostname, source)
+		 DO UPDATE SET user_id = COALESCE($2, endpoint_agents.user_id), last_checkin = NOW(), is_active = true`,
 		req.Hostname, userID, req.Source,
 	)
 	if err != nil {
