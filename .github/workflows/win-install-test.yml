@@ -169,11 +169,12 @@ jobs:
             Write-Host "ALL CHECKS PASSED - current one-click Windows installer flow works"
           } finally {
             Write-Host "=== cleanup ==="
-            schtasks /Delete /TN "DocVaultClipAgent" /F 2>$null | Out-Null
-            cmd /c "net stop DocVaultClipAgent" 2>$null | Out-Null
-            & "$installDir\dvclip.exe" uninstall 2>$null | Out-Null
-            Get-Process dvclip -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            Get-CimInstance Win32_Process -Filter "name = 'wscript.exe'" | Where-Object { $_.CommandLine -like '*run-docvault-agent.vbs*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }
-            Get-CimInstance Win32_Process -Filter "name = 'cmd.exe'" | Where-Object { $_.CommandLine -like '*run-docvault-agent.cmd*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }
-            if ($listener) { Stop-Process -Id $listener.Id -Force -ErrorAction SilentlyContinue }
+            try { schtasks /Delete /TN "DocVaultClipAgent" /F 2>$null | Out-Null } catch {}
+            try { cmd /c "net stop DocVaultClipAgent" 2>$null | Out-Null } catch {}
+            try { & "$installDir\dvclip.exe" uninstall 2>$null | Out-Null } catch {}
+            try { Get-Process dvclip -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue } catch {}
+            try { Get-CimInstance Win32_Process -Filter "name = 'wscript.exe'" | Where-Object { $_.CommandLine -like '*run-docvault-agent.vbs*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null } } catch {}
+            try { Get-CimInstance Win32_Process -Filter "name = 'cmd.exe'" | Where-Object { $_.CommandLine -like '*run-docvault-agent.cmd*' } | ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null } } catch {}
+            if ($listener) { try { Stop-Process -Id $listener.Id -Force -ErrorAction SilentlyContinue } catch {} }
+            $global:LASTEXITCODE = 0
           }
