@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -127,4 +128,18 @@ func renderStandalone(w http.ResponseWriter, tc *templateCache, page string, dat
 func staticHandler() http.Handler {
 	sub, _ := fs.Sub(staticFS, "static")
 	return http.FileServer(http.FS(sub))
+}
+
+func downloadHandler() http.Handler {
+	agentFiles := http.FileServer(http.Dir("/vault/agents"))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(r.URL.Path, "/")
+		switch name {
+		case "install-windows.ko.html", "manual.ko.html":
+			w.Header().Set("Cache-Control", "no-store")
+			http.ServeFileFS(w, r, staticFS, "static/"+name)
+		default:
+			agentFiles.ServeHTTP(w, r)
+		}
+	})
 }

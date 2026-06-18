@@ -285,6 +285,54 @@ func (h *Handler) ReceiveClipboard(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok"})
 }
 
+// ReceiveHeartbeat handles POST /api/heartbeat and refreshes agent liveness
+// without inserting a user activity event.
+func (h *Handler) ReceiveHeartbeat(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePSK(w, r, "X-Agent-PSK") {
+		return
+	}
+
+	var req struct {
+		Hostname string `json:"hostname"`
+		Username string `json:"username"`
+		Source   string `json:"source"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Hostname == "" {
+		http.Error(w, `{"error":"hostname is required"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Source == "" {
+		req.Source = "clipboard"
+	}
+	if req.Source != "clipboard" && req.Source != "osquery" {
+		http.Error(w, `{"error":"invalid source"}`, http.StatusBadRequest)
+		return
+	}
+	if h.repo == nil {
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.repo.TouchAgent(r.Context(), req.Hostname, req.Source); err != nil {
+		if h.logger != nil {
+			h.logger.Warn("heartbeat touch agent", "hostname", req.Hostname, "source", req.Source, "error", err)
+		}
+		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":   "ok",
+		"hostname": req.Hostname,
+	})
+}
+
 // Enroll handles POST /api/enroll — registers an agent's hostname-to-user mapping.
 func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 	if !h.requirePSK(w, r, "X-Agent-PSK", "X-Osquery-PSK") {

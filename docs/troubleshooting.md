@@ -209,7 +209,7 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 
 - **Symptom**: the Agent Status page could mark a healthy installed PC offline if it had not produced an endpoint event recently, and a newly installed agent with no captured clipboard/file activity had weak visibility after enrollment.
 - **Cause**: `endpoint_agents.last_checkin` existed, but the UI's primary status table was derived from `endpoint_events.MAX(event_time)`. Successful clipboard/osquery event posts and osquery TLS config/log polling did not consistently update `last_checkin`, so "last event" and "last report" were conflated.
-- **Fix**: Added `endpoint.Repository.TouchAgent` and call it from clipboard event ingest, osquery batch ingest, and osquery node-key auth. The admin page now uses `endpoint_agents.last_checkin` for "보고중/오프라인" and shows an offline warning when an agent has not reported for 10 minutes.
+- **Fix**: Added `endpoint.Repository.TouchAgent` and call it from clipboard event ingest, osquery batch ingest, osquery node-key auth, and the clipboard agent's explicit `/api/heartbeat`. The admin page now uses `endpoint_agents.last_checkin` for "보고중/오프라인" and shows an offline warning when an agent has not reported for 10 minutes. The clipboard agent sends heartbeat every 60 seconds, so a newly installed but idle PC still appears as reporting.
 - **Pattern**: monitoring agent health is a heartbeat/check-in concept, not an event-volume concept. Quiet but connected agents should still look alive.
 
 ## Host assignment was source-row scoped instead of hostname scoped

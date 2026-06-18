@@ -4,7 +4,7 @@ name: win-install-test
 # does writing env into the service's registry Environment (REG_MULTI_SZ) make
 # the running service actually read DOCVAULT_SERVER_URL / DOCVAULT_AGENT_PSK and
 # connect? Proven behaviorally: point the service at a local listener and watch
-# for the enroll POST (with the PSK header) on the configured port.
+# for enroll + heartbeat POSTs (with the PSK header) on the configured port.
 
 on:
   push:
@@ -90,6 +90,11 @@ jobs:
             Write-Host "FAIL: service used the DEFAULT url :8080 - registry Environment was NOT read"; $pass = $false
           } else {
             Write-Host "FAIL: no enroll request seen - service did not connect at all"; $pass = $false
+          }
+          if ($log -match "port=9099 method=POST path=/api/heartbeat") {
+            Write-Host "PASS: service sent heartbeat, so idle PCs update last_checkin without clipboard activity"
+          } else {
+            Write-Host "FAIL: no heartbeat request seen - liveness loop did not run"; $pass = $false
           }
           if ($log -match "psk=ci-test-psk-123") {
             Write-Host "PASS: service read DOCVAULT_AGENT_PSK from registry Environment (X-Agent-PSK header present)"

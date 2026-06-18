@@ -61,8 +61,8 @@ func NewRouter(deps RouterDeps) http.Handler {
 	// Static files
 	r.Handle("/static/*", http.StripPrefix("/static/", staticHandler()))
 
-	// Agent binary downloads (binaries hold no secrets; URL/PSK are supplied at install time)
-	r.Handle("/download/*", http.StripPrefix("/download/", http.FileServer(http.Dir("/vault/agents"))))
+	// Agent binary downloads plus embedded public docs.
+	r.Handle("/download/*", http.StripPrefix("/download/", downloadHandler()))
 
 	// Health check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +87,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	// Agent event receivers (PSK-authenticated, not JWT)
 	r.Post("/api/events/osquery", deps.EndpointHandler.ReceiveOsquery)
 	r.Post("/api/events/clipboard", deps.EndpointHandler.ReceiveClipboard)
+	r.Post("/api/heartbeat", deps.EndpointHandler.ReceiveHeartbeat)
 	r.Post("/api/enroll", deps.EndpointHandler.Enroll)
 	r.Post("/api/config", deps.EndpointHandler.AgentConfig)
 

@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -25,6 +26,7 @@ func TestAllRoutesRegistered(t *testing.T) {
 	r.Post("/api/auth/refresh", noop)
 	r.Post("/api/events/osquery", noop)
 	r.Post("/api/events/clipboard", noop)
+	r.Post("/api/heartbeat", noop)
 	r.Post("/api/enroll", noop)
 	r.Post("/api/config", noop)
 
@@ -99,6 +101,7 @@ func TestAllRoutesRegistered(t *testing.T) {
 		{"POST", "/api/auth/refresh"},
 		{"POST", "/api/events/osquery"},
 		{"POST", "/api/events/clipboard"},
+		{"POST", "/api/heartbeat"},
 		{"POST", "/api/enroll"},
 		{"POST", "/api/config"},
 
@@ -230,5 +233,32 @@ func TestStaticFilesServed(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("GET /style.css status = %d, want 200", rec.Code)
+	}
+}
+
+func TestDownloadDocsServedFromEmbeddedStaticFiles(t *testing.T) {
+	handler := downloadHandler()
+
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"/install-windows.ko.html", "끝나면 관리자에게 이렇게 보내세요"},
+		{"/manual.ko.html", "실행 승인"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET %s status = %d, want 200", tt.path, rec.Code)
+			}
+			if !strings.Contains(rec.Body.String(), tt.want) {
+				t.Fatalf("GET %s body missing %q", tt.path, tt.want)
+			}
+		})
 	}
 }
