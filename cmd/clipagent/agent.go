@@ -14,12 +14,13 @@ import (
 )
 
 const (
-	pollInterval    = 500 * time.Millisecond // clipboard poll cadence
-	enrollInterval  = 5 * time.Minute        // periodic re-enroll (covers server restarts / IP changes)
-	eventQueueSize  = 500                     // bounded in-memory buffer when the server is unreachable
-	maxSendAttempts = 4                       // attempts per event before giving up
-	initialBackoff  = 1 * time.Second         // first retry delay; doubles each attempt
-	flushTimeout    = 5 * time.Second         // how long to drain the queue on shutdown
+	pollInterval      = 500 * time.Millisecond // clipboard poll cadence
+	heartbeatInterval = 60 * time.Second       // liveness update cadence even when no clipboard event occurs
+	enrollInterval    = 5 * time.Minute        // periodic re-enroll (covers server restarts / IP changes)
+	eventQueueSize    = 500                    // bounded in-memory buffer when the server is unreachable
+	maxSendAttempts   = 4                      // attempts per event before giving up
+	initialBackoff    = 1 * time.Second        // first retry delay; doubles each attempt
+	flushTimeout      = 5 * time.Second        // how long to drain the queue on shutdown
 )
 
 // ClipboardEvent is the payload sent to the server.
@@ -86,8 +87,11 @@ func runMonitor() {
 	// Enroll now, then periodically — re-enrollment survives server restarts and
 	// host/IP changes without manual intervention.
 	enrollAgent(client, serverURL, psk, hostname, username)
+	sendHeartbeat(client, serverURL, psk, hostname, username)
 	enrollTicker := time.NewTicker(enrollInterval)
 	defer enrollTicker.Stop()
+	heartbeatTicker := time.NewTicker(heartbeatInterval)
+	defer heartbeatTicker.Stop()
 
 	monitor := newClipboardMonitor()
 	pollTicker := time.NewTicker(pollInterval)
@@ -111,6 +115,9 @@ func runMonitor() {
 		case <-enrollTicker.C:
 			enrollAgent(client, serverURL, psk, hostname, username)
 
+		case <-heartbeatTicker.C:
+			go sendHeartbeat(client, serverURL, psk, hostname, username)
+
 		case <-pollTicker.C:
 			snap := monitor.Poll()
 			if snap == nil {
@@ -130,6 +137,35 @@ func runMonitor() {
 
 			enqueue(queue, event)
 		}
+	}
+}
+
+func sendHeartbeat(client *http.Client, serverURL, psk, hostname, username string) {
+	payload, _ := json.Marshal(map[string]string{
+		"hostname": hostname,
+		"username": username,
+		"source":   "clipboard",
+	})
+
+	req, err := http.NewRequest(http.MethodPost, serverURL+"/api/heartbeat", bytes.NewReader(payload))
+	if err != nil {
+		log.Printf("heartbeat request error: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if psk != "" {
+		req.Header.Set("X-Agent-PSK", psk)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("heartbeat error: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("heartbeat returned status %d", resp.StatusCode)
 	}
 }
 

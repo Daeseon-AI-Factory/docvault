@@ -26,6 +26,7 @@ func TestAllRoutesRegistered(t *testing.T) {
 	r.Post("/api/auth/refresh", noop)
 	r.Post("/api/events/osquery", noop)
 	r.Post("/api/events/clipboard", noop)
+	r.Post("/api/heartbeat", noop)
 	r.Post("/api/enroll", noop)
 	r.Post("/api/config", noop)
 
@@ -100,6 +101,7 @@ func TestAllRoutesRegistered(t *testing.T) {
 		{"POST", "/api/auth/refresh"},
 		{"POST", "/api/events/osquery"},
 		{"POST", "/api/events/clipboard"},
+		{"POST", "/api/heartbeat"},
 		{"POST", "/api/enroll"},
 		{"POST", "/api/config"},
 

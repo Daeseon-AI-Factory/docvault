@@ -67,8 +67,9 @@ Real-Windows agent testing = `windows-latest` CI (dev Mac is Apple-Silicon; no u
 
 **P0 — make it real for the first customer (the friend)**
 1. Get one real Windows PC installed and confirm **events actually flow** (enroll ≠ capture).
-2. Per-agent **"reporting / last seen"** liveness is now based on `endpoint_agents.last_checkin`
-   (enroll/config/event heartbeat). Remaining: production notification policy for offline alerts.
+2. Per-agent **"reporting / last seen"** liveness is now based on `endpoint_agents.last_checkin`.
+   The clipboard agent sends `/api/heartbeat` every 60 seconds, so idle Windows PCs still show
+   as reporting. Remaining: production notification policy for offline alerts.
 
 **P1 — trust & safety of the new AI agent**
 3. **Prompt injection via tool output** now has deterministic mutating-tool confirmation. Remaining:

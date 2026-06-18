@@ -87,6 +87,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	// Agent event receivers (PSK-authenticated, not JWT)
 	r.Post("/api/events/osquery", deps.EndpointHandler.ReceiveOsquery)
 	r.Post("/api/events/clipboard", deps.EndpointHandler.ReceiveClipboard)
+	r.Post("/api/heartbeat", deps.EndpointHandler.ReceiveHeartbeat)
 	r.Post("/api/enroll", deps.EndpointHandler.Enroll)
 	r.Post("/api/config", deps.EndpointHandler.AgentConfig)
 

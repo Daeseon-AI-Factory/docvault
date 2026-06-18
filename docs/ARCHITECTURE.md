@@ -10,6 +10,7 @@ DocVault는 단일 서버에 모든 컴포넌트가 모인 구조다. 사용자 
 osquery daemon         ──HTTPS POST──→  /api/events/osquery
                                               │
 클립보드 에이전트(Go)   ──HTTPS POST──→  /api/events/clipboard
+클립보드 에이전트(Go)   ──HTTPS POST──→  /api/heartbeat
                                               │
                                               ▼
                                        PostgreSQL 16
@@ -67,6 +68,8 @@ endpoint.HandleOsqueryEvents
 ```
 
 클립보드 에이전트도 같은 흐름. 엔드포인트는 `/api/events/clipboard`, normalize 단계만 다르다.
+클립보드 변화가 없는 PC도 관리자 화면에서 살아있는지 보이도록, 에이전트는 별도로
+`/api/heartbeat`를 60초마다 호출해 `endpoint_agents.last_checkin`만 갱신한다.
 
 ### 2. 관리자 페이지 조회 (사용자 타임라인)
 

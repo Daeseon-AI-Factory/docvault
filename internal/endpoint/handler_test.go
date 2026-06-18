@@ -17,6 +17,7 @@ func TestAgentEndpointsFailClosedWhenPSKIsMissing(t *testing.T) {
 	}{
 		{"osquery", h.ReceiveOsquery, `{"results":[]}`},
 		{"clipboard", h.ReceiveClipboard, `{}`},
+		{"heartbeat", h.ReceiveHeartbeat, `{}`},
 		{"enroll", h.Enroll, `{}`},
 		{"config", h.AgentConfig, `{}`},
 	}
@@ -46,6 +47,7 @@ func TestAgentEndpointsRejectWrongPSKBeforeProcessing(t *testing.T) {
 	}{
 		{"osquery", h.ReceiveOsquery, "X-Osquery-PSK", `{"results":[]}`},
 		{"clipboard", h.ReceiveClipboard, "X-Agent-PSK", `{}`},
+		{"heartbeat", h.ReceiveHeartbeat, "X-Agent-PSK", `{}`},
 		{"enroll", h.Enroll, "X-Agent-PSK", `{}`},
 		{"config", h.AgentConfig, "X-Osquery-PSK", `{}`},
 	}
