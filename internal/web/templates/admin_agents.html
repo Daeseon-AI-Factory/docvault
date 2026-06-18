@@ -122,21 +122,15 @@
 
   <p><strong>1) 다운로드 / Download</strong></p>
   <ul>
-    <li><a href="/download/dvclip-windows-amd64.exe">🪟 Windows (64-bit) — dvclip.exe</a></li>
+    <li>🪟 Windows — <b>위의 <code>docvault-install.bat</code>만 사용하세요.</b> 직접 <code>dvclip.exe install</code>을 실행하면 서비스 계정으로 떠서 클립보드 감지가 안 됩니다.</li>
     <li><a href="/download/dvclip-macos-arm64">🍎 macOS (Apple Silicon / M1·M2·M3·M4)</a></li>
     <li><a href="/download/dvclip-macos-amd64">🍎 macOS (Intel)</a></li>
   </ul>
 
-  <p><strong>2) Windows 설치</strong> — PowerShell을 <em>관리자 권한</em>으로 열고 붙여넣기 / <span style="opacity:.7">open PowerShell as Administrator and paste:</span></p>
-  <pre style="background:#0b1220;color:#e2e8f0;padding:.8rem;border-radius:6px;overflow:auto;font-size:.85rem;line-height:1.5;"><code>mkdir C:\DocVault -Force
-move .\dvclip-windows-amd64.exe C:\DocVault\dvclip.exe
-Unblock-File C:\DocVault\dvclip.exe
-setx /M DOCVAULT_SERVER_URL "{{.ServerURL}}"
-setx /M DOCVAULT_AGENT_PSK "{{.AgentPSK}}"
-C:\DocVault\dvclip.exe install
-net start DocVaultClipAgent</code></pre>
-  <p class="text-muted">※ SmartScreen("Windows의 PC 보호") 경고가 뜨면 <strong>"추가 정보 → 실행"</strong>을 누르세요(미서명 앱이라 정상). <span style="opacity:.7">If SmartScreen warns, click "More info → Run anyway".</span></p>
-  <p class="text-muted">제거 / Uninstall: <code>net stop DocVaultClipAgent &amp;&amp; C:\DocVault\dvclip.exe uninstall</code></p>
+  <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;margin:.5rem 0;color:#991b1b;">
+    <b>중요:</b> Windows에서 <code>dvclip.exe install</code>, <code>net start DocVaultClipAgent</code> 방식은 더 이상 사용하지 마세요.
+    그 방식은 <code>기민철$</code>, <code>DESKTOP...$</code> 같은 서비스 계정으로 실행되어 클립보드 감지가 안 됩니다.
+  </div>
 
   <p><strong>2) macOS 설치(실행)</strong> — 터미널에서 / <span style="opacity:.7">in Terminal:</span></p>
   <pre style="background:#0b1220;color:#e2e8f0;padding:.8rem;border-radius:6px;overflow:auto;font-size:.85rem;line-height:1.5;"><code>xattr -dr com.apple.quarantine ~/Downloads/dvclip-macos-arm64
