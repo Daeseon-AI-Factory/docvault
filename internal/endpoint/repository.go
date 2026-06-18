@@ -281,7 +281,8 @@ func (r *Repository) ListAgents(ctx context.Context) ([]*AgentRow, error) {
 }
 
 // AssignAgent sets (or clears, when userID is nil) the employee for a registered
-// agent, and back-fills past events from that host so timelines attribute them.
+// agent. Endpoint events are immutable hash-chained records, so assignment only
+// affects the endpoint_agents mapping used for future event attribution.
 func (r *Repository) AssignAgent(ctx context.Context, agentID int64, userID *int64) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -300,11 +301,6 @@ func (r *Repository) AssignAgent(ctx context.Context, agentID int64, userID *int
 		userID, hostname,
 	); err != nil {
 		return fmt.Errorf("assign host %s: %w", hostname, err)
-	}
-	if _, err := tx.Exec(ctx,
-		`UPDATE endpoint_events SET user_id = $1 WHERE hostname = $2`, userID, hostname,
-	); err != nil {
-		return fmt.Errorf("backfill events for %s: %w", hostname, err)
 	}
 	return tx.Commit(ctx)
 }

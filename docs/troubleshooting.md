@@ -216,7 +216,7 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 
 - **Symptom**: a PC can have both `clipboard` and `osquery` rows for the same hostname. Assigning one row to an employee could leave the other row unassigned, and hostname-to-user lookup could hit the wrong/null row.
 - **Cause**: `AssignAgent` updated one `endpoint_agents.id`, while `lookupUserByHostname` queried active rows by hostname without requiring a non-null user or deterministic latest row.
-- **Fix**: hostname lookup now chooses the latest active row with a non-null `user_id`. Web host assignment updates every `endpoint_agents` row for that hostname and back-fills all events for the host. The AI `assign_host` action now does the same and stores per-row previous state for rollback.
+- **Fix**: hostname lookup now chooses the latest active row with a non-null `user_id`. Web host assignment updates every `endpoint_agents` row for that hostname, and AI `assign_host` does the same while storing per-row previous state for rollback. Endpoint events are immutable hash-chained records, so assignment affects future attribution; existing events remain queryable by hostname.
 - **Pattern**: the operator thinks in "PC/hostname", not "source row". Keep assignment semantics hostname-wide whenever downstream event attribution is hostname-wide.
 
 ## AI action tools could run from tool-output prompt injection

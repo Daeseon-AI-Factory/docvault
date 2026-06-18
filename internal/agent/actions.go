@@ -141,16 +141,10 @@ func actionTools() []Tool {
 				if err := db.QueryRow(ctx, `SELECT id FROM users WHERE username=$1`, username).Scan(&newUser); err != nil {
 					return fmt.Sprintf(`{"error":"사용자를 찾을 수 없음: %s"}`, username), nil
 				}
-				var prevEventUser *int64
-				_ = db.QueryRow(ctx, `SELECT user_id FROM endpoint_events WHERE hostname=$1 AND user_id IS NOT NULL ORDER BY event_time DESC LIMIT 1`, hostname).Scan(&prevEventUser)
 				if _, err := db.Exec(ctx, `UPDATE endpoint_agents SET user_id=$1 WHERE hostname=$2`, newUser, hostname); err != nil {
 					return "", err
 				}
-				_, _ = db.Exec(ctx, `UPDATE endpoint_events SET user_id=$1 WHERE hostname=$2`, newUser, hostname)
 				prev := map[string]any{"hostname": hostname, "agents": prevAgents}
-				if prevEventUser != nil {
-					prev["prev_event_user_id"] = *prevEventUser
-				}
 				aid, _ := logAction(ctx, db, "assign_host", agentIDs[0], fmt.Sprintf("호스트 %s → %s 배정", hostname, username), prev)
 				return fmt.Sprintf(`{"ok":true,"hostname":%q,"assigned_to":%q,"action_id":%d}`, hostname, username, aid), nil
 			},
@@ -235,14 +229,8 @@ func Rollback(ctx context.Context, db *pgxpool.Pool, actionID int64) error {
 		if v, ok := prev["prev_user_id"].(float64); ok && v != 0 {
 			pid = int64(v)
 		}
-		if v, ok := prev["prev_event_user_id"].(float64); ok && v != 0 {
-			pid = int64(v)
-		}
 		if !restoredAgents && target != nil {
 			_, _ = db.Exec(ctx, `UPDATE endpoint_agents SET user_id=$1 WHERE id=$2`, pid, *target)
-		}
-		if h, ok := prev["hostname"].(string); ok {
-			_, _ = db.Exec(ctx, `UPDATE endpoint_events SET user_id=$1 WHERE hostname=$2`, pid, h)
 		}
 	case "acknowledge_alert":
 		if target != nil {
