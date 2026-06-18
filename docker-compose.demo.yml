@@ -1,0 +1,28 @@
+# Portfolio demo override.
+#
+# Use with the existing local/dev compose file so secret-bearing DB/JWT/PSK
+# configuration stays in docker-compose.yml and .env.demo:
+#
+#   docker compose --env-file .env.demo \
+#     -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+#
+# The project name makes volumes independent from the product/friend instance:
+#   docvault-demo_pgdata
+#   docvault-demo_vaultdata
+
+name: docvault-demo
+
+services:
+  seed:
+    environment:
+      DOCVAULT_DEFAULT_LANG: en
+      DOCVAULT_INSTANCE_LABEL: Portfolio Demo
+      DOCVAULT_DEMO_SEED: "true"
+
+  server:
+    environment:
+      DOCVAULT_DEFAULT_LANG: en
+      DOCVAULT_INSTANCE_LABEL: Portfolio Demo
+      DOCVAULT_DEMO_SEED: "true"
+    ports: !override
+      - "127.0.0.1:${DOCVAULT_DEMO_HTTP_PORT:-18080}:8080"

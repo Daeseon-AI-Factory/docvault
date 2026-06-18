@@ -288,6 +288,8 @@ func run(logger *slog.Logger) error {
 		AgentPSK:       cfg.OsqueryPSK,
 		TOTPProtector:  totpProtector,
 		Logger:         logger,
+		DefaultLang:    cfg.DefaultLang,
+		InstanceLabel:  cfg.InstanceLabel,
 	})
 	if err != nil {
 		return fmt.Errorf("create page handler: %w", err)

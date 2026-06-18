@@ -53,6 +53,49 @@ Log in at `https://<domain>` as `admin` and **change the password immediately** 
 
 ---
 
+## Portfolio demo server (separate from the product/friend instance)
+
+Do **not** use the production/friend database for portfolio demos. The repo includes
+an isolated demo stack:
+
+- `docker-compose.demo.yml` overrides the normal local compose project name to `docvault-demo`;
+- it creates separate Postgres and vault volumes;
+- it binds the app to `127.0.0.1:18080` by default;
+- `DOCVAULT_DEFAULT_LANG=en` makes the UI open in English;
+- `DOCVAULT_DEMO_SEED=true` seeds sample employees, agents, health states,
+  alerts, and endpoint events.
+
+Local demo:
+
+```bash
+bash scripts/gen-env.sh localhost
+mv .env .env.demo
+cat >> .env.demo <<'EOF'
+DOCVAULT_DEMO_HTTP_PORT=18080
+DOCVAULT_DEFAULT_LANG=en
+DOCVAULT_INSTANCE_LABEL=Portfolio Demo
+DOCVAULT_DEMO_SEED=true
+EOF
+
+docker compose --env-file .env.demo -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+docker compose --env-file .env.demo -f docker-compose.yml -f docker-compose.demo.yml logs seed
+open http://localhost:18080
+```
+
+Public portfolio demo on the same box as another DocVault instance:
+
+1. keep a separate source dir such as `/opt/docvault-demo-src`;
+2. keep a separate `.env.demo`;
+3. run `scripts/deploy-demo-box.sh` with `scripts/.deploy-demo.env`;
+4. put an external Caddy/Nginx vhost in front of `127.0.0.1:18080`.
+
+Example Caddy vhost: `deploy/caddy/demo-site.Caddyfile`.
+
+This gives you a real server + real demo DB + real seeded UI without touching
+the friend/customer product instance.
+
+---
+
 ## Part 2 — Clipboard agent (the friend's PC)
 
 This is DocVault's own agent and is the quickest path to a working product.

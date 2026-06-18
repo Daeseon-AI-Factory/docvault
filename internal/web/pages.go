@@ -93,6 +93,8 @@ type PageHandler struct {
 	totpProtector  *auth.SecretProtector
 	rateLimiter    *LoginRateLimiter
 	logger         *slog.Logger
+	defaultLang    string
+	instanceLabel  string
 }
 
 type PageHandlerDeps struct {
@@ -111,6 +113,8 @@ type PageHandlerDeps struct {
 	AgentPSK       string
 	TOTPProtector  *auth.SecretProtector
 	Logger         *slog.Logger
+	DefaultLang    string
+	InstanceLabel  string
 }
 
 func NewPageHandler(deps PageHandlerDeps) (*PageHandler, error) {
@@ -136,20 +140,24 @@ func NewPageHandler(deps PageHandlerDeps) (*PageHandler, error) {
 		totpProtector:  deps.TOTPProtector,
 		rateLimiter:    NewLoginRateLimiter(5, 10*time.Minute, 15*time.Minute),
 		logger:         deps.Logger,
+		defaultLang:    normalizeDefaultLang(deps.DefaultLang),
+		instanceLabel:  deps.InstanceLabel,
 	}, nil
 }
 
 type basePage struct {
-	Title    string
-	Active   string
-	Username string
-	Role     string
-	UserID   int64
+	Title         string
+	Active        string
+	Username      string
+	Role          string
+	UserID        int64
+	DefaultLang   string
+	InstanceLabel string
 }
 
 func (h *PageHandler) base(r *http.Request, title, active string) basePage {
 	u := auth.UserFromContext(r.Context())
-	bp := basePage{Title: title, Active: active}
+	bp := basePage{Title: title, Active: active, DefaultLang: h.defaultLang, InstanceLabel: h.instanceLabel}
 	if u != nil {
 		bp.Username = u.Username
 		bp.Role = string(u.Role)
@@ -162,13 +170,22 @@ func (h *PageHandler) base(r *http.Request, title, active string) basePage {
 func (h *PageHandler) pageData(r *http.Request, title, active string) map[string]interface{} {
 	bp := h.base(r, title, active)
 	return map[string]interface{}{
-		"Title":     bp.Title,
-		"Active":    bp.Active,
-		"Username":  bp.Username,
-		"Role":      bp.Role,
-		"UserID":    bp.UserID,
-		"CSRFToken": CSRFToken(r),
+		"Title":         bp.Title,
+		"Active":        bp.Active,
+		"Username":      bp.Username,
+		"Role":          bp.Role,
+		"UserID":        bp.UserID,
+		"CSRFToken":     CSRFToken(r),
+		"DefaultLang":   bp.DefaultLang,
+		"InstanceLabel": bp.InstanceLabel,
 	}
+}
+
+func normalizeDefaultLang(lang string) string {
+	if lang == "en" {
+		return "en"
+	}
+	return "ko"
 }
 
 func (h *PageHandler) requireAdmin(w http.ResponseWriter, r *http.Request) (*auth.AuthUser, bool) {
@@ -229,7 +246,12 @@ func (h *PageHandler) filterReadableFolders(r *http.Request, u *auth.AuthUser, f
 }
 
 func (h *PageHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
-	renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": "", "CSRFToken": CSRFToken(r)})
+	renderStandalone(w, h.tc, "login.html", map[string]interface{}{
+		"Error":         "",
+		"CSRFToken":     CSRFToken(r),
+		"DefaultLang":   h.defaultLang,
+		"InstanceLabel": h.instanceLabel,
+	})
 }
 
 func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
@@ -238,7 +260,10 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 	// Rate limit check
 	if h.rateLimiter.IsLocked(ip) {
 		renderStandalone(w, h.tc, "login.html", map[string]interface{}{
-			"Error": "Too many failed attempts. Please try again in 15 minutes.", "CSRFToken": CSRFToken(r),
+			"Error":         "Too many failed attempts. Please try again in 15 minutes.",
+			"CSRFToken":     CSRFToken(r),
+			"DefaultLang":   h.defaultLang,
+			"InstanceLabel": h.instanceLabel,
 		})
 		return
 	}
@@ -261,7 +286,9 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		if locked {
 			errMsg = "Account locked for 15 minutes due to too many failed attempts"
 		}
-		renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": errMsg, "CSRFToken": CSRFToken(r)})
+		renderStandalone(w, h.tc, "login.html", map[string]interface{}{
+			"Error": errMsg, "CSRFToken": CSRFToken(r), "DefaultLang": h.defaultLang, "InstanceLabel": h.instanceLabel,
+		})
 		return
 	}
 	if !u.IsActive {
@@ -272,7 +299,9 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		if locked {
 			errMsg = "Account locked for 15 minutes due to too many failed attempts"
 		}
-		renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": errMsg, "CSRFToken": CSRFToken(r)})
+		renderStandalone(w, h.tc, "login.html", map[string]interface{}{
+			"Error": errMsg, "CSRFToken": CSRFToken(r), "DefaultLang": h.defaultLang, "InstanceLabel": h.instanceLabel,
+		})
 		return
 	}
 	if user.CheckPassword(u.PasswordHash, password) != nil {
@@ -283,7 +312,9 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		if locked {
 			errMsg = "Account locked for 15 minutes due to too many failed attempts"
 		}
-		renderStandalone(w, h.tc, "login.html", map[string]interface{}{"Error": errMsg, "CSRFToken": CSRFToken(r)})
+		renderStandalone(w, h.tc, "login.html", map[string]interface{}{
+			"Error": errMsg, "CSRFToken": CSRFToken(r), "DefaultLang": h.defaultLang, "InstanceLabel": h.instanceLabel,
+		})
 		return
 	}
 
@@ -1071,6 +1102,7 @@ func (h *PageHandler) EmployeeInstallPage(w http.ResponseWriter, r *http.Request
 	data := map[string]interface{}{
 		"Valid":       token != nil,
 		"DownloadURL": "/install/" + raw + "/download",
+		"DefaultLang": h.defaultLang,
 	}
 	if token != nil {
 		data["FullName"] = token.FullName

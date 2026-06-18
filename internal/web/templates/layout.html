@@ -12,6 +12,7 @@
   <div class="app">
     <nav class="sidebar">
       <div class="sidebar-brand">DocVault</div>
+      {{if .InstanceLabel}}<div class="sidebar-section" style="margin-top:.15rem;color:#cbd5e1;">{{.InstanceLabel}}</div>{{end}}
       <ul class="sidebar-nav">
         <li><a href="/dashboard" {{if eq .Active "dashboard"}}class="active"{{end}}>Dashboard</a></li>
         <li><a href="/files" {{if eq .Active "files"}}class="active"{{end}}>Files</a></li>
@@ -30,8 +31,8 @@
         {{end}}
 
         <li class="sidebar-section">Help</li>
-        <li><a href="/download/install-windows.ko.html" target="_blank">📘 Setup Guide</a></li>
-        <li><a href="/download/manual.ko.html" target="_blank">📖 User Manual</a></li>
+        <li><a href="/download/install-windows.ko.html" target="_blank" data-lang-href-ko="/download/install-windows.ko.html" data-lang-href-en="/download/install-windows.en.html">📘 Setup Guide</a></li>
+        <li><a href="/download/manual.ko.html" target="_blank" data-lang-href-ko="/download/manual.ko.html" data-lang-href-en="/download/manual.en.html">📖 User Manual</a></li>
       </ul>
       <div class="sidebar-user">
         <button type="button" id="langToggle" data-i18n-skip
@@ -55,6 +56,7 @@
   </div>
   <script>
   (function(){
+    var DEFAULT_LANG="{{.DefaultLang}}";
     var DICT={
       "Dashboard":"대시보드","Files":"파일","File":"파일","Monitoring":"모니터링",
       "Endpoint Events":"엔드포인트 이벤트","Audit Logs":"감사 로그","Admin":"관리자",
@@ -79,22 +81,55 @@
       "Save Changes":"변경 저장","Search":"검색","Sign In":"로그인","Upload":"업로드","Upload File":"파일 업로드",
       "Online":"온라인","Offline":"오프라인","Password":"비밀번호"
     };
+    var KO_TO_EN_EXTRA={
+      "Windows onboarding 큐":"Windows onboarding queue","설치 링크 만들기":"Create install link",
+      "미지정 PC":"Unassigned PCs","캡처 미검증":"Capture unverified","오프라인":"Offline","문제 상태":"Problem status","활성 링크":"Active links",
+      "에이전트 설치":"Install Agent","직원에게 보낼 설치 링크가 생성됐습니다":"Install link created for employee",
+      "링크 복사":"Copy link","직원별 1회용 Windows 설치 링크":"One-time Windows install link per employee",
+      "Windows 직원 onboarding 기본 경로":"Default Windows employee onboarding path","대상 직원":"Target employee","미지정 링크":"Unassigned link",
+      "만료":"Expires","24시간":"24 hours","3일":"3 days","7일":"7 days","설치 링크 생성":"Create install link",
+      "직원이 보는 화면":"Employee-facing screen","최근 설치 링크":"Recent install links","대상":"Target","상태":"Status",
+      "폐기":"Revoke","사용됨":"Used","활성":"Active","관리자용 fallback":"Admin fallback","미지정 설치파일 다운로드":"Download unassigned installer",
+      "캡처 대기":"Capture waiting","캡처 검증됨":"Capture verified","미검증":"Unverified","보고중":"Reporting","지정":"Assign",
+      "현재 담당자":"Current owner","담당자 지정":"Assign owner","등록된 에이전트 없음 — PC에 에이전트를 설치하면 자동 등록됩니다.":"No registered agents yet — PCs appear automatically after agent install."
+    };
+    var REVERSE={};
+    Object.keys(DICT).forEach(function(k){ REVERSE[DICT[k]]=k; });
+    Object.keys(KO_TO_EN_EXTRA).forEach(function(k){ REVERSE[k]=KO_TO_EN_EXTRA[k]; });
+    function requestedLang(){
+      try{
+        var l=(new URLSearchParams(window.location.search)).get('lang');
+        return (l==='en'||l==='ko')?l:'';
+      }catch(e){ return ''; }
+    }
     function apply(root,lang){
       if(!root||!root.querySelectorAll) return;
+      var explicit=root.querySelectorAll('[data-i18n-en],[data-i18n-ko]');
+      for(var j=0;j<explicit.length;j++){
+        var ex=explicit[j], val=ex.getAttribute(lang==='ko'?'data-i18n-ko':'data-i18n-en');
+        if(val!==null) ex.textContent=val;
+      }
+      var hrefs=root.querySelectorAll('[data-lang-href-en],[data-lang-href-ko]');
+      for(var h=0;h<hrefs.length;h++){
+        var href=hrefs[h].getAttribute(lang==='ko'?'data-lang-href-ko':'data-lang-href-en');
+        if(href) hrefs[h].setAttribute('href',href);
+      }
       var els=root.querySelectorAll('*');
       for(var i=0;i<els.length;i++){
         var el=els[i];
         if(el.children.length) continue;
         if(el.hasAttribute('data-i18n-skip')) continue;
+        if(el.hasAttribute('data-i18n-en')||el.hasAttribute('data-i18n-ko')) continue;
         var orig=el.getAttribute('data-i18n-o');
         if(orig===null) orig=el.textContent;
         var key=orig.trim();
-        if(!DICT[key]) continue;
+        var out=(lang==='ko')?DICT[key]:REVERSE[key];
+        if(!out) continue;
         if(el.getAttribute('data-i18n-o')===null) el.setAttribute('data-i18n-o',orig);
-        el.textContent=(lang==='ko')?orig.replace(key,DICT[key]):orig;
+        el.textContent=orig.replace(key,out);
       }
     }
-    function cur(){ try{return localStorage.getItem('dvlang')||'ko';}catch(e){return 'ko';} }
+    function cur(){ try{return localStorage.getItem('dvlang')||requestedLang()||DEFAULT_LANG||'ko';}catch(e){return DEFAULT_LANG||'ko';} }
     function setLang(lang){
       try{localStorage.setItem('dvlang',lang);}catch(e){}
       document.documentElement.lang=(lang==='ko')?'ko':'en';
@@ -103,7 +138,7 @@
       if(b) b.textContent=(lang==='ko')?'🌐 English':'🌐 한국어';
     }
     document.addEventListener('DOMContentLoaded',function(){
-      setLang(cur());
+      setLang(requestedLang()||cur());
       var b=document.getElementById('langToggle');
       if(b) b.addEventListener('click',function(){ setLang(cur()==='ko'?'en':'ko'); });
       document.body.addEventListener('htmx:afterSwap',function(e){ apply((e.detail&&e.detail.target)||document.body,cur()); });

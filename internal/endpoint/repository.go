@@ -279,7 +279,7 @@ func (r *Repository) ListAgents(ctx context.Context) ([]*AgentRow, error) {
 		        a.reported_username, a.last_ip, a.is_active, a.last_checkin,
 		        COALESCE((SELECT COUNT(*) FROM endpoint_events e
 		                  WHERE e.hostname = a.hostname AND e.event_time >= NOW() - INTERVAL '24 hours'), 0) AS cnt,
-		        a.install_token_id, a.agent_version, a.running_mode, a.session_user,
+		        a.install_token_id, a.agent_version, a.running_mode, a.session_username,
 		        a.health_status, a.clipboard_available, a.clipboard_error,
 		        a.last_self_test_at, a.last_clipboard_event_at
 		 FROM endpoint_agents a
@@ -393,7 +393,7 @@ func (r *Repository) UpdateAgentHealth(ctx context.Context, h AgentHealthUpdate)
 	err := r.db.QueryRow(ctx,
 		`INSERT INTO endpoint_agents
 		 (hostname, source, reported_username, last_ip, install_token_id, agent_version,
-		  running_mode, session_user, health_status, clipboard_available, clipboard_error,
+		  running_mode, session_username, health_status, clipboard_available, clipboard_error,
 		  last_self_test_at, last_checkin, is_active)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW(), true)
 		 ON CONFLICT (hostname, source)
@@ -402,7 +402,7 @@ func (r *Repository) UpdateAgentHealth(ctx context.Context, h AgentHealthUpdate)
 		               install_token_id = COALESCE($5, endpoint_agents.install_token_id),
 		               agent_version = COALESCE(NULLIF($6, ''), endpoint_agents.agent_version),
 		               running_mode = COALESCE(NULLIF($7, ''), endpoint_agents.running_mode),
-		               session_user = COALESCE(NULLIF($8, ''), endpoint_agents.session_user),
+		               session_username = COALESCE(NULLIF($8, ''), endpoint_agents.session_username),
 		               health_status = CASE
 		                   WHEN endpoint_agents.last_clipboard_event_at IS NOT NULL AND $9 = 'capture_waiting'
 		                   THEN endpoint_agents.health_status

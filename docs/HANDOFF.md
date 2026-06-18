@@ -38,6 +38,13 @@ See `docs/LIMITATIONS.md`.
   employee. `endpoint_agents` now tracks running mode, session user, self-test time, clipboard
   availability, and last real clipboard event; dashboard/admin agents show unassigned/offline/
   capture-unverified/problem queues.
+- **English/portfolio mode**: `DOCVAULT_DEFAULT_LANG=en` and
+  `DOCVAULT_INSTANCE_LABEL=Portfolio Demo` make the web UI open in English for screenshots and
+  demos while leaving the normal product instance Korean-first.
+- **Isolated demo stack**: `docker-compose.demo.yml` + `.env.demo` run a separate
+  `docvault-demo` project with independent Postgres/vault volumes. `DOCVAULT_DEMO_SEED=true`
+  seeds sample users, agents, alerts, endpoint events, and onboarding health states for portfolio
+  screenshots without touching the friend/product database.
 - **Host→employee assignment**, **CSV bulk user import**, **AI assistant** (`internal/agent`:
   OpenAI/Gemini tool-use, read + actions, every action logged to `agent_actions` with one-click
   rollback), **AI security briefing** (`internal/insight`, Anthropic or Gemini).
@@ -53,6 +60,8 @@ go test ./...                      # tests (needs a Postgres for some)
 bash scripts/deploy-box.sh         # rsync→build→recreate→prune→verify /health (needs scripts/.deploy.env)
 ```
 `scripts/.deploy.env` (gitignored) holds `DOCVAULT_DEPLOY_HOST/KEY/SRC/COMPOSE/URL`.
+`scripts/.deploy-demo.env` (gitignored) holds demo deployment config for
+`scripts/deploy-demo-box.sh`.
 Real-Windows agent testing = `windows-latest` CI (dev Mac is Apple-Silicon; no usable local VM).
 
 ## 5. Open gaps (honest — verify, don't assume)
