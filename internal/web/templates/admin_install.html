@@ -5,6 +5,8 @@
   .inst-num{flex:0 0 32px;height:32px;border-radius:50%;background:#2563eb;color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center}
   .inst-warn{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin:10px 0;color:#92400e}
   .inst-ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 14px;margin:10px 0;color:#166534}
+  .inst-copy{background:#0f172a;color:#e5e7eb;border-radius:10px;padding:14px 16px;margin:12px 0;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.9rem;line-height:1.6}
+  .inst-no{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 14px;margin:10px 0;color:#991b1b}
   .mock{max-width:380px;margin:.6rem 0;border:1px solid #c7ccd1;border-radius:8px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.18);font-size:.86rem;background:#f0f0f0}
   .mock .bar{background:#e9e9e9;border-bottom:1px solid #d4d4d4;padding:7px 12px;font-weight:600;color:#222}
   .mock .body{padding:14px 16px;color:#222;background:#fff}
@@ -39,6 +41,18 @@
     <li>아래 <b>②번 안내</b>를 직원에게 보여주거나, <a href="/download/install-windows.ko.html" target="_blank">공개 설치 가이드 링크</a>를 함께 보내기</li>
   </ol>
   <div class="inst-warn">💡 <b>제일 확실한 방법:</b> 직원이 컴퓨터에 익숙하지 않다면, 첫 설치는 <b>원격(AnyDesk·팀뷰어)으로 직접</b> 깔아주세요. 한 번만 깔면 끝입니다.</div>
+  <p style="margin-top:1rem"><b>직원에게 그대로 보내는 문구</b></p>
+  <div class="inst-copy">DocVault 설치 파일 보냅니다.
+
+1. 받은 docvault-install.bat 파일을 바탕화면에 저장
+2. 파일을 더블클릭
+3. 경고창이 뜨면 [실행] → [예] → [추가 정보] → [실행] 순서로 누르기
+4. 검은 창에 "설치 완료!"가 보이면 끝
+5. 끝나면 완료 화면 사진을 저에게 보내주세요.
+
+Docker, WSL, PowerShell은 설치하거나 열 필요 없습니다.
+막히면 그 화면을 사진으로 찍어서 보내주세요.</div>
+  <div class="inst-no">🚫 <b>직원에게 시키지 말 것:</b> Docker 설치, WSL 설치, PowerShell 명령 입력, 인증키 직접 입력, 이메일로 .bat 보내기. 직원은 <b>파일 저장 → 더블클릭 → 버튼 누르기</b>만 하면 됩니다.</div>
 </div>
 
 <div class="card">
