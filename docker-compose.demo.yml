@@ -18,11 +18,15 @@ services:
       DOCVAULT_DEFAULT_LANG: en
       DOCVAULT_INSTANCE_LABEL: Portfolio Demo
       DOCVAULT_DEMO_SEED: "true"
+      DOCVAULT_DEMO_LOGIN_ENABLED: "true"
+      DOCVAULT_DEMO_LOGIN_USERNAME: admin
 
   server:
     environment:
       DOCVAULT_DEFAULT_LANG: en
       DOCVAULT_INSTANCE_LABEL: Portfolio Demo
       DOCVAULT_DEMO_SEED: "true"
+      DOCVAULT_DEMO_LOGIN_ENABLED: "true"
+      DOCVAULT_DEMO_LOGIN_USERNAME: admin
     ports: !override
       - "127.0.0.1:${DOCVAULT_DEMO_HTTP_PORT:-18080}:8080"

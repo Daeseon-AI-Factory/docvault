@@ -64,6 +64,9 @@ an isolated demo stack:
 - `DOCVAULT_DEFAULT_LANG=en` makes the UI open in English;
 - `DOCVAULT_DEMO_SEED=true` seeds sample employees, agents, health states,
   alerts, and endpoint events.
+- `DOCVAULT_DEMO_LOGIN_ENABLED=true` shows a separate **Try Demo** button on
+  `/login`; it signs in as `DOCVAULT_DEMO_LOGIN_USERNAME` without exposing the
+  demo password. Keep this disabled on product/customer instances.
 
 Local demo:
 
@@ -75,6 +78,8 @@ DOCVAULT_DEMO_HTTP_PORT=18080
 DOCVAULT_DEFAULT_LANG=en
 DOCVAULT_INSTANCE_LABEL=Portfolio Demo
 DOCVAULT_DEMO_SEED=true
+DOCVAULT_DEMO_LOGIN_ENABLED=true
+DOCVAULT_DEMO_LOGIN_USERNAME=admin
 EOF
 
 docker compose --env-file .env.demo -f docker-compose.yml -f docker-compose.demo.yml up -d --build

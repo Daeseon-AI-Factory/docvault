@@ -76,45 +76,49 @@ type UserRiskSummary struct {
 }
 
 type PageHandler struct {
-	tc             *templateCache
-	db             *pgxpool.Pool
-	jwtSvc         *auth.JWTService
-	vaultRepo      *vault.Repository
-	folderRepo     *folder.Repository
-	userRepo       *user.Repository
-	auditRepo      *audit.Repository
-	endpointRepo   *endpoint.Repository
-	alertRepo      *alert.Repository
-	monitorHandler *monitoring.Handler
-	uebaProvider   UEBARiskProvider
-	fileTracker    FileTrackerUI
-	pskConfigured  bool
-	agentPSK       string
-	totpProtector  *auth.SecretProtector
-	rateLimiter    *LoginRateLimiter
-	logger         *slog.Logger
-	defaultLang    string
-	instanceLabel  string
+	tc                *templateCache
+	db                *pgxpool.Pool
+	jwtSvc            *auth.JWTService
+	vaultRepo         *vault.Repository
+	folderRepo        *folder.Repository
+	userRepo          *user.Repository
+	auditRepo         *audit.Repository
+	endpointRepo      *endpoint.Repository
+	alertRepo         *alert.Repository
+	monitorHandler    *monitoring.Handler
+	uebaProvider      UEBARiskProvider
+	fileTracker       FileTrackerUI
+	pskConfigured     bool
+	agentPSK          string
+	totpProtector     *auth.SecretProtector
+	rateLimiter       *LoginRateLimiter
+	logger            *slog.Logger
+	defaultLang       string
+	instanceLabel     string
+	demoLoginEnabled  bool
+	demoLoginUsername string
 }
 
 type PageHandlerDeps struct {
-	DB             *pgxpool.Pool
-	JWTSvc         *auth.JWTService
-	VaultRepo      *vault.Repository
-	FolderRepo     *folder.Repository
-	UserRepo       *user.Repository
-	AuditRepo      *audit.Repository
-	EndpointRepo   *endpoint.Repository
-	AlertRepo      *alert.Repository
-	MonitorHandler *monitoring.Handler
-	UEBAAnalyzer   UEBARiskProvider
-	FileTracker    FileTrackerUI
-	PSKConfigured  bool
-	AgentPSK       string
-	TOTPProtector  *auth.SecretProtector
-	Logger         *slog.Logger
-	DefaultLang    string
-	InstanceLabel  string
+	DB                *pgxpool.Pool
+	JWTSvc            *auth.JWTService
+	VaultRepo         *vault.Repository
+	FolderRepo        *folder.Repository
+	UserRepo          *user.Repository
+	AuditRepo         *audit.Repository
+	EndpointRepo      *endpoint.Repository
+	AlertRepo         *alert.Repository
+	MonitorHandler    *monitoring.Handler
+	UEBAAnalyzer      UEBARiskProvider
+	FileTracker       FileTrackerUI
+	PSKConfigured     bool
+	AgentPSK          string
+	TOTPProtector     *auth.SecretProtector
+	Logger            *slog.Logger
+	DefaultLang       string
+	InstanceLabel     string
+	DemoLoginEnabled  bool
+	DemoLoginUsername string
 }
 
 func NewPageHandler(deps PageHandlerDeps) (*PageHandler, error) {
@@ -123,25 +127,27 @@ func NewPageHandler(deps PageHandlerDeps) (*PageHandler, error) {
 		return nil, err
 	}
 	return &PageHandler{
-		tc:             tc,
-		db:             deps.DB,
-		jwtSvc:         deps.JWTSvc,
-		vaultRepo:      deps.VaultRepo,
-		folderRepo:     deps.FolderRepo,
-		userRepo:       deps.UserRepo,
-		auditRepo:      deps.AuditRepo,
-		endpointRepo:   deps.EndpointRepo,
-		alertRepo:      deps.AlertRepo,
-		monitorHandler: deps.MonitorHandler,
-		uebaProvider:   deps.UEBAAnalyzer,
-		fileTracker:    deps.FileTracker,
-		pskConfigured:  deps.PSKConfigured,
-		agentPSK:       deps.AgentPSK,
-		totpProtector:  deps.TOTPProtector,
-		rateLimiter:    NewLoginRateLimiter(5, 10*time.Minute, 15*time.Minute),
-		logger:         deps.Logger,
-		defaultLang:    normalizeDefaultLang(deps.DefaultLang),
-		instanceLabel:  deps.InstanceLabel,
+		tc:                tc,
+		db:                deps.DB,
+		jwtSvc:            deps.JWTSvc,
+		vaultRepo:         deps.VaultRepo,
+		folderRepo:        deps.FolderRepo,
+		userRepo:          deps.UserRepo,
+		auditRepo:         deps.AuditRepo,
+		endpointRepo:      deps.EndpointRepo,
+		alertRepo:         deps.AlertRepo,
+		monitorHandler:    deps.MonitorHandler,
+		uebaProvider:      deps.UEBAAnalyzer,
+		fileTracker:       deps.FileTracker,
+		pskConfigured:     deps.PSKConfigured,
+		agentPSK:          deps.AgentPSK,
+		totpProtector:     deps.TOTPProtector,
+		rateLimiter:       NewLoginRateLimiter(5, 10*time.Minute, 15*time.Minute),
+		logger:            deps.Logger,
+		defaultLang:       normalizeDefaultLang(deps.DefaultLang),
+		instanceLabel:     deps.InstanceLabel,
+		demoLoginEnabled:  deps.DemoLoginEnabled,
+		demoLoginUsername: demoLoginUsername(deps.DemoLoginUsername),
 	}, nil
 }
 
@@ -186,6 +192,14 @@ func normalizeDefaultLang(lang string) string {
 		return "en"
 	}
 	return "ko"
+}
+
+func demoLoginUsername(username string) string {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return "admin"
+	}
+	return username
 }
 
 func (h *PageHandler) requireAdmin(w http.ResponseWriter, r *http.Request) (*auth.AuthUser, bool) {
@@ -247,10 +261,11 @@ func (h *PageHandler) filterReadableFolders(r *http.Request, u *auth.AuthUser, f
 
 func (h *PageHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 	renderStandalone(w, h.tc, "login.html", map[string]interface{}{
-		"Error":         "",
-		"CSRFToken":     CSRFToken(r),
-		"DefaultLang":   h.defaultLang,
-		"InstanceLabel": h.instanceLabel,
+		"Error":            "",
+		"CSRFToken":        CSRFToken(r),
+		"DefaultLang":      h.defaultLang,
+		"InstanceLabel":    h.instanceLabel,
+		"DemoLoginEnabled": h.demoLoginEnabled,
 	})
 }
 
@@ -260,10 +275,11 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 	// Rate limit check
 	if h.rateLimiter.IsLocked(ip) {
 		renderStandalone(w, h.tc, "login.html", map[string]interface{}{
-			"Error":         "Too many failed attempts. Please try again in 15 minutes.",
-			"CSRFToken":     CSRFToken(r),
-			"DefaultLang":   h.defaultLang,
-			"InstanceLabel": h.instanceLabel,
+			"Error":            "Too many failed attempts. Please try again in 15 minutes.",
+			"CSRFToken":        CSRFToken(r),
+			"DefaultLang":      h.defaultLang,
+			"InstanceLabel":    h.instanceLabel,
+			"DemoLoginEnabled": h.demoLoginEnabled,
 		})
 		return
 	}
@@ -287,7 +303,7 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 			errMsg = "Account locked for 15 minutes due to too many failed attempts"
 		}
 		renderStandalone(w, h.tc, "login.html", map[string]interface{}{
-			"Error": errMsg, "CSRFToken": CSRFToken(r), "DefaultLang": h.defaultLang, "InstanceLabel": h.instanceLabel,
+			"Error": errMsg, "CSRFToken": CSRFToken(r), "DefaultLang": h.defaultLang, "InstanceLabel": h.instanceLabel, "DemoLoginEnabled": h.demoLoginEnabled,
 		})
 		return
 	}
@@ -300,7 +316,7 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 			errMsg = "Account locked for 15 minutes due to too many failed attempts"
 		}
 		renderStandalone(w, h.tc, "login.html", map[string]interface{}{
-			"Error": errMsg, "CSRFToken": CSRFToken(r), "DefaultLang": h.defaultLang, "InstanceLabel": h.instanceLabel,
+			"Error": errMsg, "CSRFToken": CSRFToken(r), "DefaultLang": h.defaultLang, "InstanceLabel": h.instanceLabel, "DemoLoginEnabled": h.demoLoginEnabled,
 		})
 		return
 	}
@@ -313,7 +329,7 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 			errMsg = "Account locked for 15 minutes due to too many failed attempts"
 		}
 		renderStandalone(w, h.tc, "login.html", map[string]interface{}{
-			"Error": errMsg, "CSRFToken": CSRFToken(r), "DefaultLang": h.defaultLang, "InstanceLabel": h.instanceLabel,
+			"Error": errMsg, "CSRFToken": CSRFToken(r), "DefaultLang": h.defaultLang, "InstanceLabel": h.instanceLabel, "DemoLoginEnabled": h.demoLoginEnabled,
 		})
 		return
 	}
@@ -332,6 +348,31 @@ func (h *PageHandler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 
 	// Success: clear rate limiter
 	h.rateLimiter.RecordSuccess(ip)
+	h.issueSessionCookies(w, &u)
+	h.logAudit(r, u.ID, audit.ActionLogin, http.StatusSeeOther)
+	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+}
+
+func (h *PageHandler) DemoLoginSubmit(w http.ResponseWriter, r *http.Request) {
+	if !h.demoLoginEnabled {
+		http.NotFound(w, r)
+		return
+	}
+
+	var u user.User
+	err := h.db.QueryRow(r.Context(),
+		`SELECT id, username, email, password_hash, full_name, role, department, is_active,
+		        COALESCE(totp_secret,''), COALESCE(totp_enabled,false), created_at, updated_at
+		 FROM users WHERE username = $1`,
+		h.demoLoginUsername,
+	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.FullName, &u.Role, &u.Department, &u.IsActive,
+		&u.TOTPSecret, &u.TOTPEnabled, &u.CreatedAt, &u.UpdatedAt)
+	if err != nil || !u.IsActive || u.TOTPEnabled {
+		http.Error(w, "demo login unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	h.rateLimiter.RecordSuccess(ExtractIP(r))
 	h.issueSessionCookies(w, &u)
 	h.logAudit(r, u.ID, audit.ActionLogin, http.StatusSeeOther)
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)

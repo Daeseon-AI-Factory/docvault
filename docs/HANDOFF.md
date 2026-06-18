@@ -45,6 +45,9 @@ See `docs/LIMITATIONS.md`.
   `docvault-demo` project with independent Postgres/vault volumes. `DOCVAULT_DEMO_SEED=true`
   seeds sample users, agents, alerts, endpoint events, and onboarding health states for portfolio
   screenshots without touching the friend/product database.
+- **Demo login button**: demo-only `DOCVAULT_DEMO_LOGIN_ENABLED=true` exposes a
+  separate **Try Demo** button on `/login`, signing in as `DOCVAULT_DEMO_LOGIN_USERNAME`
+  without showing a password. Leave it unset for the friend/product server.
 - **Host→employee assignment**, **CSV bulk user import**, **AI assistant** (`internal/agent`:
   OpenAI/Gemini tool-use, read + actions, every action logged to `agent_actions` with one-click
   rollback), **AI security briefing** (`internal/insight`, Anthropic or Gemini).

@@ -71,6 +71,7 @@ func TestAllRoutesRegistered(t *testing.T) {
 	// Web pages
 	r.Get("/login", noop)
 	r.Post("/login", noop)
+	r.Post("/login/demo", noop)
 	r.Get("/logout", noop)
 	r.Get("/install/{token}", noop)
 	r.Get("/install/{token}/download", noop)
@@ -148,6 +149,7 @@ func TestAllRoutesRegistered(t *testing.T) {
 		// Web pages
 		{"GET", "/login"},
 		{"POST", "/login"},
+		{"POST", "/login/demo"},
 		{"GET", "/logout"},
 		{"GET", "/install/test-token"},
 		{"GET", "/install/test-token/download"},
@@ -191,6 +193,7 @@ func TestAllRoutesRegistered(t *testing.T) {
 func TestFormActionsHaveHandlers(t *testing.T) {
 	// These are the exact form action paths from our templates
 	formActions := []string{
+		"/login/demo",
 		"/files/upload",
 		"/folders/create",
 		"/admin/users/create",
@@ -208,6 +211,7 @@ func TestFormActionsHaveHandlers(t *testing.T) {
 
 	// Register exactly what router.go registers for form handlers
 	r.Post("/files/upload", noop)
+	r.Post("/login/demo", noop)
 	r.Post("/files/{fileID}/checkout", noop)
 	r.Post("/files/{fileID}/checkin", noop)
 	r.Post("/folders/create", noop)

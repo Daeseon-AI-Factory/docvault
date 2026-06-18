@@ -53,6 +53,8 @@ func TestLoadDefaults(t *testing.T) {
 	os.Setenv("DOCVAULT_OSQUERY_PSK", "a-strong-test-psk-123456")
 	os.Unsetenv("DOCVAULT_LISTEN_ADDR")
 	os.Unsetenv("DOCVAULT_VAULT_PATH")
+	os.Unsetenv("DOCVAULT_DEMO_LOGIN_ENABLED")
+	os.Unsetenv("DOCVAULT_DEMO_LOGIN_USERNAME")
 
 	cfg, err := Load()
 	if err != nil {
@@ -64,6 +66,32 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.VaultPath != "/vault" {
 		t.Errorf("default VaultPath = %s, want /vault", cfg.VaultPath)
+	}
+	if cfg.DemoLoginEnabled {
+		t.Error("demo login should be disabled by default")
+	}
+	if cfg.DemoLoginUsername != "admin" {
+		t.Errorf("default DemoLoginUsername = %s, want admin", cfg.DemoLoginUsername)
+	}
+}
+
+func TestLoadDemoLoginConfig(t *testing.T) {
+	t.Setenv("DOCVAULT_DB_URL", "postgres://localhost/test")
+	t.Setenv("DOCVAULT_MASTER_KEY", "testkey")
+	t.Setenv("DOCVAULT_JWT_SECRET", "a-strong-test-jwt-secret-123456")
+	t.Setenv("DOCVAULT_OSQUERY_PSK", "a-strong-test-psk-123456")
+	t.Setenv("DOCVAULT_DEMO_LOGIN_ENABLED", "true")
+	t.Setenv("DOCVAULT_DEMO_LOGIN_USERNAME", "demo-admin")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.DemoLoginEnabled {
+		t.Error("demo login should be enabled")
+	}
+	if cfg.DemoLoginUsername != "demo-admin" {
+		t.Errorf("DemoLoginUsername = %s, want demo-admin", cfg.DemoLoginUsername)
 	}
 }
 
