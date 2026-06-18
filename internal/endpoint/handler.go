@@ -2,7 +2,9 @@ package endpoint
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -16,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/user"
 )
 
 // AlertEvaluator is called after storing an event to fire alert rules.
@@ -255,10 +258,15 @@ func (h *Handler) ReceiveClipboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hostnameMap := h.buildHostnameMap(r.Context(), []string{ce.Hostname})
+	userID, err := h.autoResolveEndpointUserID(r.Context(), ce.Username)
+	if err != nil && h.logger != nil {
+		h.logger.Warn("auto resolve clipboard user", "hostname", ce.Hostname, "username", ce.Username, "error", err)
+	}
 	if err := h.repo.TouchAgent(r.Context(), ce.Hostname, "clipboard", ce.Username, clientIP(r)); err != nil {
 		h.logger.Warn("touch clipboard agent", "hostname", ce.Hostname, "error", err)
 	}
+	h.assignEndpointAgentIfUnassigned(r.Context(), ce.Hostname, userID)
+	hostnameMap := h.buildHostnameMap(r.Context(), []string{ce.Hostname})
 	event := NormalizeClipboardEvent(&ce, hostnameMap)
 
 	if err := h.repo.Insert(r.Context(), event); err != nil {
@@ -319,6 +327,10 @@ func (h *Handler) ReceiveHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, err := h.autoResolveEndpointUserID(r.Context(), req.Username)
+	if err != nil && h.logger != nil {
+		h.logger.Warn("auto resolve heartbeat user", "hostname", req.Hostname, "username", req.Username, "error", err)
+	}
 	if err := h.repo.TouchAgent(r.Context(), req.Hostname, req.Source, req.Username, clientIP(r)); err != nil {
 		if h.logger != nil {
 			h.logger.Warn("heartbeat touch agent", "hostname", req.Hostname, "source", req.Source, "error", err)
@@ -326,6 +338,7 @@ func (h *Handler) ReceiveHeartbeat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 		return
 	}
+	h.assignEndpointAgentIfUnassigned(r.Context(), req.Hostname, userID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -358,24 +371,17 @@ func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 		req.Source = "osquery"
 	}
 
-	// Look up user by username
-	var userID *int64
-	if req.Username != "" {
-		var uid int64
-		err := h.db.QueryRow(r.Context(),
-			`SELECT id FROM users WHERE username = $1`, req.Username,
-		).Scan(&uid)
-		if err == nil {
-			userID = &uid
-		}
+	userID, err := h.autoResolveEndpointUserID(r.Context(), req.Username)
+	if err != nil && h.logger != nil {
+		h.logger.Warn("auto resolve enrolled user", "hostname", req.Hostname, "username", req.Username, "error", err)
 	}
 
 	// Upsert endpoint_agents
-	_, err := h.db.Exec(r.Context(),
+	_, err = h.db.Exec(r.Context(),
 		`INSERT INTO endpoint_agents (hostname, user_id, source, reported_username, last_ip, last_checkin)
 		 VALUES ($1, $2, $3, $4, $5, NOW())
 		 ON CONFLICT (hostname, source)
-		 DO UPDATE SET user_id = COALESCE($2, endpoint_agents.user_id),
+		 DO UPDATE SET user_id = COALESCE(endpoint_agents.user_id, $2),
 		               reported_username = COALESCE(NULLIF($4, ''), endpoint_agents.reported_username),
 		               last_ip = COALESCE(NULLIF($5, ''), endpoint_agents.last_ip),
 		               last_checkin = NOW(),
@@ -395,6 +401,82 @@ func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 		"status":   "enrolled",
 		"hostname": req.Hostname,
 	})
+}
+
+func (h *Handler) autoResolveEndpointUserID(ctx context.Context, reportedUsername string) (*int64, error) {
+	if h == nil || h.db == nil {
+		return nil, nil
+	}
+	username := endpointUsernameCandidate(reportedUsername)
+	if !isAutoAssignableEndpointUsername(username) {
+		return nil, nil
+	}
+
+	var uid int64
+	err := h.db.QueryRow(ctx,
+		`SELECT id FROM users WHERE LOWER(username) = LOWER($1) ORDER BY id LIMIT 1`,
+		username,
+	).Scan(&uid)
+	if err == nil {
+		return &uid, nil
+	}
+
+	email := autoEndpointEmail(username)
+	err = h.db.QueryRow(ctx,
+		`INSERT INTO users (username, email, password_hash, full_name, role, department)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username
+		 RETURNING id`,
+		username, email, "endpoint-auto-user-no-login", username, string(user.RoleEmployee), "자동 등록",
+	).Scan(&uid)
+	if err != nil {
+		return nil, err
+	}
+	if h.logger != nil {
+		h.logger.Info("auto-created endpoint user", "username", username, "user_id", uid)
+	}
+	return &uid, nil
+}
+
+func (h *Handler) assignEndpointAgentIfUnassigned(ctx context.Context, hostname string, userID *int64) {
+	if h == nil || h.db == nil || userID == nil || strings.TrimSpace(hostname) == "" {
+		return
+	}
+	if _, err := h.db.Exec(ctx,
+		`UPDATE endpoint_agents SET user_id = COALESCE(user_id, $2) WHERE hostname = $1`,
+		hostname, *userID,
+	); err != nil && h.logger != nil {
+		h.logger.Warn("auto assign endpoint agent", "hostname", hostname, "user_id", *userID, "error", err)
+	}
+}
+
+func endpointUsernameCandidate(reportedUsername string) string {
+	u := strings.TrimSpace(reportedUsername)
+	if i := strings.LastIndex(u, `\`); i >= 0 {
+		u = u[i+1:]
+	}
+	if i := strings.LastIndex(u, "/"); i >= 0 {
+		u = u[i+1:]
+	}
+	return strings.TrimSpace(u)
+}
+
+func isAutoAssignableEndpointUsername(username string) bool {
+	u := strings.TrimSpace(username)
+	if u == "" || len([]rune(u)) > 50 || strings.HasSuffix(u, "$") {
+		return false
+	}
+	switch strings.ToUpper(u) {
+	case "SYSTEM", "LOCAL SERVICE", "NETWORK SERVICE", "DEFAULTUSER0", "WDAGUTILITYACCOUNT":
+		return false
+	default:
+		return true
+	}
+}
+
+func autoEndpointEmail(username string) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(username)))
+	return "endpoint-" + hex.EncodeToString(sum[:])[:16] + "@docvault.local"
 }
 
 func clientIP(r *http.Request) string {

@@ -66,3 +66,47 @@ func TestAgentEndpointsRejectWrongPSKBeforeProcessing(t *testing.T) {
 		})
 	}
 }
+
+func TestEndpointUsernameCandidate(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"alice", "alice"},
+		{`ACME\alice`, "alice"},
+		{"ACME/bob", "bob"},
+		{"  기민철  ", "기민철"},
+	}
+	for _, tt := range tests {
+		if got := endpointUsernameCandidate(tt.in); got != tt.want {
+			t.Fatalf("endpointUsernameCandidate(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestIsAutoAssignableEndpointUsername(t *testing.T) {
+	yes := []string{"alice", "기민철", "runneradmin"}
+	for _, username := range yes {
+		if !isAutoAssignableEndpointUsername(username) {
+			t.Fatalf("%q should be auto-assignable", username)
+		}
+	}
+
+	no := []string{"", "DESKTOP-MLTM9DR$", "기민철$", "SYSTEM", "LOCAL SERVICE", "NETWORK SERVICE"}
+	for _, username := range no {
+		if isAutoAssignableEndpointUsername(username) {
+			t.Fatalf("%q should not be auto-assignable", username)
+		}
+	}
+}
+
+func TestAutoEndpointEmailIsStableAndInternal(t *testing.T) {
+	a := autoEndpointEmail("Alice")
+	b := autoEndpointEmail("alice")
+	if a != b {
+		t.Fatalf("autoEndpointEmail should be case-insensitive stable: %q != %q", a, b)
+	}
+	if !strings.HasPrefix(a, "endpoint-") || !strings.HasSuffix(a, "@docvault.local") {
+		t.Fatalf("autoEndpointEmail(%q) = %q", "alice", a)
+	}
+}

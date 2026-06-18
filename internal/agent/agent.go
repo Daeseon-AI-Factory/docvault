@@ -383,26 +383,32 @@ func readTools() []Tool {
 		},
 		{
 			Name:        "list_hosts",
-			Description: "등록된 PC(에이전트)와 담당 직원, 마지막 접속 시각을 조회한다. 미배정 PC 파악에 사용.",
+			Description: "등록된 PC(에이전트)와 OS 사용자, 마지막 IP, 담당 직원, 마지막 접속 시각을 조회한다. 미배정/서비스계정 PC 파악에 사용.",
 			Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
 			Run: func(ctx context.Context, db *pgxpool.Pool, args map[string]any) (string, error) {
-				rows, err := db.Query(ctx, `SELECT a.hostname, a.source, COALESCE(u.full_name,''), COALESCE(u.username,''), a.last_checkin
+				rows, err := db.Query(ctx, `SELECT a.hostname, a.source, a.reported_username, a.last_ip, COALESCE(u.full_name,''), COALESCE(u.username,''), a.last_checkin
 					FROM endpoint_agents a LEFT JOIN users u ON u.id = a.user_id ORDER BY a.last_checkin DESC`)
 				if err != nil {
 					return "", err
 				}
 				defer rows.Close()
 				var b strings.Builder
-				b.WriteString("호스트 | 소스 | 담당자 | 마지막접속\n")
+				b.WriteString("호스트 | OS사용자 | 마지막IP | 소스 | 담당자 | 상태 | 마지막접속\n")
 				for rows.Next() {
-					var host, src, fn, un string
+					var host, src, osUser, lastIP, fn, un string
 					var last time.Time
-					if err := rows.Scan(&host, &src, &fn, &un, &last); err == nil {
+					if err := rows.Scan(&host, &src, &osUser, &lastIP, &fn, &un, &last); err == nil {
 						who := "(미배정)"
 						if un != "" {
 							who = fmt.Sprintf("%s(%s)", fn, un)
 						}
-						fmt.Fprintf(&b, "%s | %s | %s | %s\n", host, src, who, last.Format(time.RFC3339))
+						status := "정상"
+						if osUser == "" {
+							status = "OS 사용자 미확인"
+						} else if strings.HasSuffix(osUser, "$") {
+							status = "문제: 서비스 계정(최신 설치파일 재실행 필요)"
+						}
+						fmt.Fprintf(&b, "%s | %s | %s | %s | %s | %s | %s\n", host, osUser, lastIP, src, who, status, last.Format(time.RFC3339))
 					}
 				}
 				return b.String(), nil
