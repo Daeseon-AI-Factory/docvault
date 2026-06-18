@@ -16,7 +16,10 @@
         {{range .Agents}}
         <tr>
           <td><strong>{{.Hostname}}</strong></td>
-          <td>{{if .ReportedUsername}}{{.ReportedUsername}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+          <td>
+            {{if .ReportedUsername}}{{.ReportedUsername}}{{else}}<span class="text-muted">-</span>{{end}}
+            {{if isMachineUser .ReportedUsername}}<br><span style="color:#b45309;font-size:.85rem;">서비스 계정 - 최신 설치파일 다시 실행 필요</span>{{end}}
+          </td>
           <td>{{if .LastIP}}<code>{{.LastIP}}</code>{{else}}<span class="text-muted">-</span>{{end}}</td>
           <td><span class="badge badge-info">{{.Source}}</span></td>
           <td class="text-muted">{{.LastCheckin.Format "2006-01-02 15:04:05"}}</td>
@@ -48,7 +51,10 @@
         {{$agent := .}}
         <tr>
           <td><strong>{{.Hostname}}</strong></td>
-          <td>{{if .ReportedUsername}}{{.ReportedUsername}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+          <td>
+            {{if .ReportedUsername}}{{.ReportedUsername}}{{else}}<span class="text-muted">-</span>{{end}}
+            {{if isMachineUser .ReportedUsername}}<br><span style="color:#b45309;font-size:.85rem;">서비스 계정 - 최신 설치파일 다시 실행 필요</span>{{end}}
+          </td>
           <td>{{if .LastIP}}<code>{{.LastIP}}</code>{{else}}<span class="text-muted">-</span>{{end}}</td>
           <td><span class="badge badge-info">{{.Source}}</span></td>
           <td>{{if .Username}}{{.FullName}} <span class="text-muted">({{.Username}})</span>{{else}}<span style="color:#ef4444">미지정</span>{{end}}</td>

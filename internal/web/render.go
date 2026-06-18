@@ -18,9 +18,14 @@ var templateFS embed.FS
 var staticFS embed.FS
 
 var funcMap = template.FuncMap{
-	"formatBytes":  formatBytes,
-	"printf":       fmt.Sprintf,
-	"selectedUser": selectedUser,
+	"formatBytes":   formatBytes,
+	"isMachineUser": isMachineUser,
+	"printf":        fmt.Sprintf,
+	"selectedUser":  selectedUser,
+}
+
+func isMachineUser(username string) bool {
+	return strings.HasSuffix(username, "$")
 }
 
 func selectedUser(agentUserID *int64, userID int64) bool {
