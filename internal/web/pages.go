@@ -903,11 +903,13 @@ func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type agentInfo struct {
-		Hostname    string
-		Source      string
-		LastCheckin time.Time
-		EventCount  int64
-		IsOnline    bool
+		Hostname         string
+		Source           string
+		ReportedUsername string
+		LastIP           string
+		LastCheckin      time.Time
+		EventCount       int64
+		IsOnline         bool
 	}
 
 	regAgents, _ := h.endpointRepo.ListAgents(r.Context())
@@ -920,11 +922,13 @@ func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
 			offlineCount++
 		}
 		agents = append(agents, agentInfo{
-			Hostname:    row.Hostname,
-			Source:      row.Source,
-			LastCheckin: row.LastCheckin,
-			EventCount:  row.EventCount,
-			IsOnline:    isOnline,
+			Hostname:         row.Hostname,
+			Source:           row.Source,
+			ReportedUsername: row.ReportedUsername,
+			LastIP:           row.LastIP,
+			LastCheckin:      row.LastCheckin,
+			EventCount:       row.EventCount,
+			IsOnline:         isOnline,
 		})
 	}
 
@@ -1029,11 +1033,13 @@ func (h *PageHandler) EventsSearchPage(w http.ResponseWriter, r *http.Request) {
 		UserIDStr string
 		EventType string
 		FileName  string
+		Hostname  string
 		From      string
 		To        string
 	}{
 		EventType: r.URL.Query().Get("event_type"),
 		FileName:  r.URL.Query().Get("file_name"),
+		Hostname:  r.URL.Query().Get("hostname"),
 		From:      r.URL.Query().Get("from"),
 		To:        r.URL.Query().Get("to"),
 		UserIDStr: r.URL.Query().Get("user_id"),
@@ -1053,6 +1059,9 @@ func (h *PageHandler) EventsSearchPage(w http.ResponseWriter, r *http.Request) {
 	if filter.FileName != "" {
 		params.FileName = &filter.FileName
 	}
+	if filter.Hostname != "" {
+		params.Hostname = &filter.Hostname
+	}
 	if filter.From != "" {
 		if t, err := time.Parse("2006-01-02T15:04", filter.From); err == nil {
 			params.From = &t
@@ -1064,11 +1073,51 @@ func (h *PageHandler) EventsSearchPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	events, _ := h.endpointRepo.Search(r.Context(), params)
 	users, _ := h.userRepo.List(r.Context())
+	userLabels := make(map[int64]string, len(users))
+	for _, u := range users {
+		label := u.FullName
+		if label == "" {
+			label = u.Username
+		} else if u.Username != "" {
+			label += " (" + u.Username + ")"
+		}
+		userLabels[u.ID] = label
+	}
+	agentRows, _ := h.endpointRepo.ListAgents(r.Context())
+	hostOwnerLabels := make(map[string]string, len(agentRows))
+	for _, a := range agentRows {
+		if a.UserID == nil {
+			continue
+		}
+		if label := userLabels[*a.UserID]; label != "" {
+			hostOwnerLabels[a.Hostname] = label
+		}
+	}
+
+	events, _ := h.endpointRepo.Search(r.Context(), params)
+	type eventInfo struct {
+		*endpoint.EndpointEvent
+		UserIDStr      string
+		UserLabel      string
+		HostOwnerLabel string
+	}
+	eventRows := make([]eventInfo, 0, len(events))
+	for _, e := range events {
+		row := eventInfo{EndpointEvent: e}
+		if e.UserID != nil {
+			row.UserIDStr = strconv.FormatInt(*e.UserID, 10)
+			row.UserLabel = userLabels[*e.UserID]
+			if row.UserLabel == "" {
+				row.UserLabel = "사용자 #" + row.UserIDStr
+			}
+		}
+		row.HostOwnerLabel = hostOwnerLabels[e.Hostname]
+		eventRows = append(eventRows, row)
+	}
 
 	data := h.pageData(r, "Endpoint Events", "events")
-	data["Events"] = events
+	data["Events"] = eventRows
 	data["Users"] = users
 	data["Filter"] = filter
 	renderPage(w, h.tc, "events_search.html", data)
@@ -1089,6 +1138,9 @@ func (h *PageHandler) ExportEventsCSV(w http.ResponseWriter, r *http.Request) {
 	}
 	if v := r.URL.Query().Get("file_name"); v != "" {
 		params.FileName = &v
+	}
+	if v := r.URL.Query().Get("hostname"); v != "" {
+		params.Hostname = &v
 	}
 	if v := r.URL.Query().Get("from"); v != "" {
 		if t, err := time.Parse("2006-01-02T15:04", v); err == nil {
@@ -1113,18 +1165,44 @@ func (h *PageHandler) ExportEventsCSV(w http.ResponseWriter, r *http.Request) {
 	// BOM for Excel Korean compatibility
 	w.Write([]byte{0xEF, 0xBB, 0xBF})
 	cw := csv.NewWriter(w)
-	if err := cw.Write([]string{"일시", "사용자ID", "이벤트유형", "파일명", "파일경로", "프로세스", "호스트명", "소스"}); err != nil {
+	users, _ := h.userRepo.List(r.Context())
+	userLabels := make(map[int64]string, len(users))
+	for _, u := range users {
+		label := u.FullName
+		if label == "" {
+			label = u.Username
+		} else if u.Username != "" {
+			label += " (" + u.Username + ")"
+		}
+		userLabels[u.ID] = label
+	}
+	agentRows, _ := h.endpointRepo.ListAgents(r.Context())
+	hostOwnerLabels := make(map[string]string, len(agentRows))
+	for _, a := range agentRows {
+		if a.UserID == nil {
+			continue
+		}
+		if label := userLabels[*a.UserID]; label != "" {
+			hostOwnerLabels[a.Hostname] = label
+		}
+	}
+
+	if err := cw.Write([]string{"일시", "이벤트귀속사용자", "현재호스트담당자", "사용자ID", "이벤트유형", "파일명", "파일경로", "프로세스", "호스트명", "소스"}); err != nil {
 		h.logger.Error("export endpoint CSV header", "error", err)
 		return
 	}
 
 	for _, e := range events {
 		userID := ""
+		userLabel := ""
 		if e.UserID != nil {
 			userID = strconv.FormatInt(*e.UserID, 10)
+			userLabel = userLabels[*e.UserID]
 		}
 		if err := cw.Write([]string{
 			e.EventTime.Format("2006-01-02 15:04:05"),
+			csvSafeField(userLabel),
+			csvSafeField(hostOwnerLabels[e.Hostname]),
 			userID,
 			csvSafeField(string(e.EventType)),
 			csvSafeField(e.FileName),

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -188,7 +189,7 @@ func (h *Handler) processOsqueryBatch(ctx context.Context, batch *OsqueryBatch) 
 
 	hostnameMap := h.buildHostnameMap(ctx, hostnames)
 	for _, hostname := range hostnames {
-		if err := h.repo.TouchAgent(ctx, hostname, "osquery"); err != nil {
+		if err := h.repo.TouchAgent(ctx, hostname, "osquery", "", ""); err != nil {
 			h.logger.Warn("touch osquery agent", "hostname", hostname, "error", err)
 		}
 	}
@@ -255,7 +256,7 @@ func (h *Handler) ReceiveClipboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hostnameMap := h.buildHostnameMap(r.Context(), []string{ce.Hostname})
-	if err := h.repo.TouchAgent(r.Context(), ce.Hostname, "clipboard"); err != nil {
+	if err := h.repo.TouchAgent(r.Context(), ce.Hostname, "clipboard", ce.Username, clientIP(r)); err != nil {
 		h.logger.Warn("touch clipboard agent", "hostname", ce.Hostname, "error", err)
 	}
 	event := NormalizeClipboardEvent(&ce, hostnameMap)
@@ -318,7 +319,7 @@ func (h *Handler) ReceiveHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.repo.TouchAgent(r.Context(), req.Hostname, req.Source); err != nil {
+	if err := h.repo.TouchAgent(r.Context(), req.Hostname, req.Source, req.Username, clientIP(r)); err != nil {
 		if h.logger != nil {
 			h.logger.Warn("heartbeat touch agent", "hostname", req.Hostname, "source", req.Source, "error", err)
 		}
@@ -371,11 +372,15 @@ func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 
 	// Upsert endpoint_agents
 	_, err := h.db.Exec(r.Context(),
-		`INSERT INTO endpoint_agents (hostname, user_id, source, last_checkin)
-		 VALUES ($1, $2, $3, NOW())
+		`INSERT INTO endpoint_agents (hostname, user_id, source, reported_username, last_ip, last_checkin)
+		 VALUES ($1, $2, $3, $4, $5, NOW())
 		 ON CONFLICT (hostname, source)
-		 DO UPDATE SET user_id = COALESCE($2, endpoint_agents.user_id), last_checkin = NOW(), is_active = true`,
-		req.Hostname, userID, req.Source,
+		 DO UPDATE SET user_id = COALESCE($2, endpoint_agents.user_id),
+		               reported_username = COALESCE(NULLIF($4, ''), endpoint_agents.reported_username),
+		               last_ip = COALESCE(NULLIF($5, ''), endpoint_agents.last_ip),
+		               last_checkin = NOW(),
+		               is_active = true`,
+		req.Hostname, userID, req.Source, req.Username, clientIP(r),
 	)
 	if err != nil {
 		h.logger.Error("enroll agent", "error", err)
@@ -390,6 +395,23 @@ func (h *Handler) Enroll(w http.ResponseWriter, r *http.Request) {
 		"status":   "enrolled",
 		"hostname": req.Hostname,
 	})
+}
+
+func clientIP(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+		if i := strings.IndexByte(forwarded, ','); i >= 0 {
+			forwarded = forwarded[:i]
+		}
+		return strings.TrimSpace(forwarded)
+	}
+	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
+		return realIP
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 // AgentConfig handles POST /api/config — serves dynamic osquery config from DB.

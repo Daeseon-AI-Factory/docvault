@@ -84,8 +84,8 @@ func (r *Repository) Search(ctx context.Context, params SearchParams) ([]*Endpoi
 		argIdx++
 	}
 	if params.Hostname != nil {
-		query += fmt.Sprintf(" AND hostname = $%d", argIdx)
-		args = append(args, *params.Hostname)
+		query += fmt.Sprintf(" AND hostname ILIKE $%d", argIdx)
+		args = append(args, "%"+*params.Hostname+"%")
 		argIdx++
 	}
 	if params.EventType != nil {
@@ -222,30 +222,35 @@ func (r *Repository) UnifiedTimeline(ctx context.Context, userID int64, limit, o
 
 // AgentRow is a registered endpoint agent joined with its assigned user.
 type AgentRow struct {
-	ID          int64
-	Hostname    string
-	Source      string
-	UserID      *int64
-	Username    *string
-	FullName    *string
-	IsActive    bool
-	LastCheckin time.Time
-	EventCount  int64
+	ID               int64
+	Hostname         string
+	Source           string
+	UserID           *int64
+	Username         *string
+	FullName         *string
+	ReportedUsername string
+	LastIP           string
+	IsActive         bool
+	LastCheckin      time.Time
+	EventCount       int64
 }
 
 // TouchAgent records that an agent was just seen. Event posts, osquery config
 // polls, and explicit enrolls all count as liveness; otherwise an idle but
 // healthy agent can look offline just because there were no suspicious events.
-func (r *Repository) TouchAgent(ctx context.Context, hostname, source string) error {
+func (r *Repository) TouchAgent(ctx context.Context, hostname, source, reportedUsername, lastIP string) error {
 	if hostname == "" || source == "" {
 		return nil
 	}
 	_, err := r.db.Exec(ctx,
-		`INSERT INTO endpoint_agents (hostname, source, last_checkin, is_active)
-		 VALUES ($1, $2, NOW(), true)
+		`INSERT INTO endpoint_agents (hostname, source, reported_username, last_ip, last_checkin, is_active)
+		 VALUES ($1, $2, $3, $4, NOW(), true)
 		 ON CONFLICT (hostname, source)
-		 DO UPDATE SET last_checkin = NOW(), is_active = true`,
-		hostname, source,
+		 DO UPDATE SET reported_username = COALESCE(NULLIF($3, ''), endpoint_agents.reported_username),
+		               last_ip = COALESCE(NULLIF($4, ''), endpoint_agents.last_ip),
+		               last_checkin = NOW(),
+		               is_active = true`,
+		hostname, source, reportedUsername, lastIP,
 	)
 	if err != nil {
 		return fmt.Errorf("touch agent %s/%s: %w", hostname, source, err)
@@ -257,7 +262,8 @@ func (r *Repository) TouchAgent(ctx context.Context, hostname, source string) er
 // a 24h event count, most recently seen first.
 func (r *Repository) ListAgents(ctx context.Context) ([]*AgentRow, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT a.id, a.hostname, a.source, a.user_id, u.username, u.full_name, a.is_active, a.last_checkin,
+		`SELECT a.id, a.hostname, a.source, a.user_id, u.username, u.full_name,
+		        a.reported_username, a.last_ip, a.is_active, a.last_checkin,
 		        COALESCE((SELECT COUNT(*) FROM endpoint_events e
 		                  WHERE e.hostname = a.hostname AND e.event_time >= NOW() - INTERVAL '24 hours'), 0) AS cnt
 		 FROM endpoint_agents a
@@ -272,7 +278,7 @@ func (r *Repository) ListAgents(ctx context.Context) ([]*AgentRow, error) {
 	for rows.Next() {
 		var a AgentRow
 		if err := rows.Scan(&a.ID, &a.Hostname, &a.Source, &a.UserID, &a.Username, &a.FullName,
-			&a.IsActive, &a.LastCheckin, &a.EventCount); err != nil {
+			&a.ReportedUsername, &a.LastIP, &a.IsActive, &a.LastCheckin, &a.EventCount); err != nil {
 			return nil, fmt.Errorf("scan agent: %w", err)
 		}
 		out = append(out, &a)

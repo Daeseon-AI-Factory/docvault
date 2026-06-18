@@ -18,8 +18,13 @@ var templateFS embed.FS
 var staticFS embed.FS
 
 var funcMap = template.FuncMap{
-	"formatBytes": formatBytes,
-	"printf":      fmt.Sprintf,
+	"formatBytes":  formatBytes,
+	"printf":       fmt.Sprintf,
+	"selectedUser": selectedUser,
+}
+
+func selectedUser(agentUserID *int64, userID int64) bool {
+	return agentUserID != nil && *agentUserID == userID
 }
 
 func formatBytes(b int64) string {

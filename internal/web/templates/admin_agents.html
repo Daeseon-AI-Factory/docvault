@@ -11,11 +11,13 @@
   {{end}}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Hostname</th><th>Source</th><th>Last Report</th><th>Events (24h)</th><th>Status</th></tr></thead>
+      <thead><tr><th>Hostname</th><th>OS User</th><th>Last IP</th><th>Source</th><th>Last Report</th><th>Events (24h)</th><th>Status</th></tr></thead>
       <tbody>
         {{range .Agents}}
         <tr>
           <td><strong>{{.Hostname}}</strong></td>
+          <td>{{if .ReportedUsername}}{{.ReportedUsername}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+          <td>{{if .LastIP}}<code>{{.LastIP}}</code>{{else}}<span class="text-muted">-</span>{{end}}</td>
           <td><span class="badge badge-info">{{.Source}}</span></td>
           <td class="text-muted">{{.LastCheckin.Format "2006-01-02 15:04:05"}}</td>
           <td>{{.EventCount}}</td>
@@ -25,7 +27,7 @@
           </td>
         </tr>
         {{else}}
-        <tr><td colspan="5" class="text-muted">No agents reporting</td></tr>
+        <tr><td colspan="7" class="text-muted">No agents reporting</td></tr>
         {{end}}
       </tbody>
     </table>
@@ -40,11 +42,14 @@
   </p>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Hostname</th><th>Source</th><th>현재 담당자</th><th>24h</th><th>담당자 지정</th></tr></thead>
+      <thead><tr><th>Hostname</th><th>OS User</th><th>Last IP</th><th>Source</th><th>현재 담당자</th><th>24h</th><th>담당자 지정</th></tr></thead>
       <tbody>
         {{range .RegisteredAgents}}
+        {{$agent := .}}
         <tr>
           <td><strong>{{.Hostname}}</strong></td>
+          <td>{{if .ReportedUsername}}{{.ReportedUsername}}{{else}}<span class="text-muted">-</span>{{end}}</td>
+          <td>{{if .LastIP}}<code>{{.LastIP}}</code>{{else}}<span class="text-muted">-</span>{{end}}</td>
           <td><span class="badge badge-info">{{.Source}}</span></td>
           <td>{{if .Username}}{{.FullName}} <span class="text-muted">({{.Username}})</span>{{else}}<span style="color:#ef4444">미지정</span>{{end}}</td>
           <td>{{.EventCount}}</td>
@@ -54,14 +59,14 @@
               <input type="hidden" name="agent_id" value="{{.ID}}">
               <select name="user_id" class="form-control" style="max-width:220px;">
                 <option value="0">— 미지정 —</option>
-                {{range $.AllUsers}}<option value="{{.ID}}">{{.FullName}} ({{.Username}})</option>{{end}}
+                {{range $.AllUsers}}<option value="{{.ID}}" {{if selectedUser $agent.UserID .ID}}selected{{end}}>{{.FullName}} ({{.Username}})</option>{{end}}
               </select>
               <button type="submit" class="btn btn-primary">지정</button>
             </form>
           </td>
         </tr>
         {{else}}
-        <tr><td colspan="5" class="text-muted">등록된 에이전트 없음 — PC에 에이전트를 설치하면 자동 등록됩니다.</td></tr>
+        <tr><td colspan="7" class="text-muted">등록된 에이전트 없음 — PC에 에이전트를 설치하면 자동 등록됩니다.</td></tr>
         {{end}}
       </tbody>
     </table>

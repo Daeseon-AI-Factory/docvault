@@ -49,11 +49,14 @@ func (h *Handler) OsqueryEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err = h.db.Exec(r.Context(),
-		`INSERT INTO endpoint_agents (hostname, source, node_key, last_checkin, is_active)
-		 VALUES ($1, 'osquery', $2, NOW(), true)
+		`INSERT INTO endpoint_agents (hostname, source, node_key, last_ip, last_checkin, is_active)
+		 VALUES ($1, 'osquery', $2, $3, NOW(), true)
 		 ON CONFLICT (hostname, source)
-		 DO UPDATE SET node_key = $2, last_checkin = NOW(), is_active = true`,
-		req.HostIdentifier, nodeKey)
+		 DO UPDATE SET node_key = $2,
+		               last_ip = COALESCE(NULLIF($3, ''), endpoint_agents.last_ip),
+		               last_checkin = NOW(),
+		               is_active = true`,
+		req.HostIdentifier, nodeKey, clientIP(r))
 	if err != nil {
 		h.logger.Error("osquery enroll: upsert", "error", err)
 		writeNodeInvalid(w)
