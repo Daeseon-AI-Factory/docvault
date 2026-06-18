@@ -145,6 +145,46 @@ func TestLoginTemplateRenders(t *testing.T) {
 	}
 }
 
+func TestLoginTemplateDemoButtonIsConditional(t *testing.T) {
+	tc, err := newTemplateCache()
+	if err != nil {
+		t.Fatalf("newTemplateCache: %v", err)
+	}
+
+	tmpl := tc.get("login.html")
+	if tmpl == nil {
+		t.Fatal("login template not found")
+	}
+
+	var disabled strings.Builder
+	err = tmpl.ExecuteTemplate(&disabled, "login.html", map[string]interface{}{
+		"DemoLoginEnabled": false,
+	})
+	if err != nil {
+		t.Fatalf("render disabled login: %v", err)
+	}
+	if strings.Contains(disabled.String(), "/login/demo") {
+		t.Error("demo login action should be hidden when disabled")
+	}
+
+	var enabled strings.Builder
+	err = tmpl.ExecuteTemplate(&enabled, "login.html", map[string]interface{}{
+		"DemoLoginEnabled": true,
+		"DefaultLang":      "en",
+		"InstanceLabel":    "Portfolio Demo",
+	})
+	if err != nil {
+		t.Fatalf("render enabled login: %v", err)
+	}
+	html := enabled.String()
+	if !strings.Contains(html, `/login/demo`) {
+		t.Error("demo login action should be rendered when enabled")
+	}
+	if !strings.Contains(html, "Try Demo") {
+		t.Error("demo login button should render English label")
+	}
+}
+
 func TestFormatBytes(t *testing.T) {
 	tests := []struct {
 		input int64

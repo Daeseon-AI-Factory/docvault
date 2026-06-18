@@ -73,6 +73,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	// Public web pages
 	r.Get("/login", deps.PageHandler.LoginPage)
 	r.Post("/login", deps.PageHandler.LoginSubmit)
+	r.Post("/login/demo", deps.PageHandler.DemoLoginSubmit)
 	r.Get("/login/2fa", deps.PageHandler.Login2FAPage)
 	r.Post("/login/2fa", deps.PageHandler.Login2FASubmit)
 	r.Get("/logout", deps.PageHandler.Logout)

@@ -31,12 +31,18 @@
         </div>
         <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">Sign In</button>
       </form>
+      {{if .DemoLoginEnabled}}
+      <form method="POST" action="/login/demo" style="margin-top:.75rem;">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn btn-outline" style="width:100%;justify-content:center;" data-i18n-en="Try Demo" data-i18n-ko="체험판 로그인">Try Demo</button>
+      </form>
+      {{end}}
     </div>
   </div>
   <script>
   (function(){
     var DEFAULT_LANG="{{.DefaultLang}}";
-    var DICT={"Username":"사용자명","Password":"비밀번호","Sign In":"로그인",
+    var DICT={"Username":"사용자명","Password":"비밀번호","Sign In":"로그인","Try Demo":"체험판 로그인",
       "Invalid username or password":"사용자명 또는 비밀번호가 올바르지 않습니다",
       "Invalid credentials":"인증 정보가 올바르지 않습니다",
       "Too many attempts. Please try again later.":"시도가 너무 많습니다. 잠시 후 다시 시도하세요."};
@@ -46,6 +52,7 @@
       var all=document.querySelectorAll('*');
       for(var i=0;i<all.length;i++){
         var el=all[i];
+        if(el.hasAttribute('data-i18n-en')||el.hasAttribute('data-i18n-ko')){var v=el.getAttribute(lang==='ko'?'data-i18n-ko':'data-i18n-en');if(v!==null)el.textContent=v;continue;}
         if(el.children.length||el.hasAttribute('data-i18n-skip'))continue;
         var orig=el.getAttribute('data-i18n-o'); if(orig===null)orig=el.textContent;
         var key=orig.trim(); var out=(lang==='ko')?DICT[key]:REVERSE[key]; if(!out)continue;

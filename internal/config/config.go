@@ -6,16 +6,18 @@ import (
 )
 
 type Config struct {
-	DBUrl         string
-	MasterKey     string
-	VaultPath     string
-	JWTSecret     string
-	ListenAddr    string
-	OsqueryPSK    string
-	SlackWebhook  string
-	AlertEmail    string
-	DefaultLang   string
-	InstanceLabel string
+	DBUrl             string
+	MasterKey         string
+	VaultPath         string
+	JWTSecret         string
+	ListenAddr        string
+	OsqueryPSK        string
+	SlackWebhook      string
+	AlertEmail        string
+	DefaultLang       string
+	InstanceLabel     string
+	DemoLoginEnabled  bool
+	DemoLoginUsername string
 
 	// Optional: enables the AI summary bot + assistant. Disabled if all keys empty.
 	// Provider precedence (when AIProvider unset): openai > gemini > anthropic.
@@ -28,16 +30,18 @@ type Config struct {
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		DBUrl:         os.Getenv("DOCVAULT_DB_URL"),
-		MasterKey:     os.Getenv("DOCVAULT_MASTER_KEY"),
-		VaultPath:     os.Getenv("DOCVAULT_VAULT_PATH"),
-		JWTSecret:     os.Getenv("DOCVAULT_JWT_SECRET"),
-		ListenAddr:    os.Getenv("DOCVAULT_LISTEN_ADDR"),
-		OsqueryPSK:    os.Getenv("DOCVAULT_OSQUERY_PSK"),
-		SlackWebhook:  os.Getenv("DOCVAULT_SLACK_WEBHOOK"),
-		AlertEmail:    os.Getenv("DOCVAULT_ALERT_EMAIL"),
-		DefaultLang:   os.Getenv("DOCVAULT_DEFAULT_LANG"),
-		InstanceLabel: os.Getenv("DOCVAULT_INSTANCE_LABEL"),
+		DBUrl:             os.Getenv("DOCVAULT_DB_URL"),
+		MasterKey:         os.Getenv("DOCVAULT_MASTER_KEY"),
+		VaultPath:         os.Getenv("DOCVAULT_VAULT_PATH"),
+		JWTSecret:         os.Getenv("DOCVAULT_JWT_SECRET"),
+		ListenAddr:        os.Getenv("DOCVAULT_LISTEN_ADDR"),
+		OsqueryPSK:        os.Getenv("DOCVAULT_OSQUERY_PSK"),
+		SlackWebhook:      os.Getenv("DOCVAULT_SLACK_WEBHOOK"),
+		AlertEmail:        os.Getenv("DOCVAULT_ALERT_EMAIL"),
+		DefaultLang:       os.Getenv("DOCVAULT_DEFAULT_LANG"),
+		InstanceLabel:     os.Getenv("DOCVAULT_INSTANCE_LABEL"),
+		DemoLoginEnabled:  truthyEnv(os.Getenv("DOCVAULT_DEMO_LOGIN_ENABLED")),
+		DemoLoginUsername: os.Getenv("DOCVAULT_DEMO_LOGIN_USERNAME"),
 
 		AnthropicAPIKey: os.Getenv("DOCVAULT_ANTHROPIC_API_KEY"),
 		GeminiAPIKey:    os.Getenv("DOCVAULT_GEMINI_API_KEY"),
@@ -73,8 +77,20 @@ func Load() (*Config, error) {
 	if cfg.DefaultLang != "ko" && cfg.DefaultLang != "en" {
 		return nil, fmt.Errorf("DOCVAULT_DEFAULT_LANG must be 'ko' or 'en'")
 	}
+	if cfg.DemoLoginUsername == "" {
+		cfg.DemoLoginUsername = "admin"
+	}
 
 	return cfg, nil
+}
+
+func truthyEnv(v string) bool {
+	switch v {
+	case "1", "true", "TRUE", "yes", "YES", "on", "ON":
+		return true
+	default:
+		return false
+	}
 }
 
 // exampleSecrets are the placeholder values shipped in .env.example and
