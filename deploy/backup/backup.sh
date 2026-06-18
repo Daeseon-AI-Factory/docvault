@@ -39,12 +39,10 @@ echo "[$(date)] Starting DocVault backup..."
 echo "[$(date)] Backing up PostgreSQL database..."
 pg_dump -U "$DB_USER" -Fc "$DB_NAME" | enc > "$BACKUP_DIR/db_${DATE}.dump.enc"
 
-# 2. Vault files: incremental sync, then an encrypted archive snapshot
-echo "[$(date)] Syncing vault files..."
-rsync -a --delete "$VAULT_DIR/" "$BACKUP_DIR/vault_latest/"
-
+# 2. Vault files: stream directly into encryption — no plaintext staging copy.
 echo "[$(date)] Creating encrypted vault archive..."
-tar czf - -C "$BACKUP_DIR" vault_latest/ | enc > "$BACKUP_DIR/vault_${DATE}.tar.gz.enc"
+tar czf - -C "$VAULT_DIR" . | enc > "$BACKUP_DIR/vault_${DATE}.tar.gz.enc"
+rm -rf "$BACKUP_DIR/vault_latest"
 
 # 3. Cleanup old encrypted backups
 echo "[$(date)] Cleaning up backups older than ${RETENTION_DAYS} days..."

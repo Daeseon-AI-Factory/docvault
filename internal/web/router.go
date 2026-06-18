@@ -39,6 +39,7 @@ type RouterDeps struct {
 	SSEHub          *SSEHub
 	InsightHandler  *insight.Handler
 	AgentHandler    *agent.Handler
+	TOTPProtector   *auth.SecretProtector
 	Logger          *slog.Logger
 }
 
@@ -52,6 +53,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Use(middleware.Logger)
 
 	authHandler := auth.NewHandler(deps.DB, deps.JWTSvc, deps.Logger, auditAuthAction(deps.AuditRepo, deps.Logger))
+	authHandler.SetSecretProtector(deps.TOTPProtector)
 
 	// Brute-force protection for the JSON login endpoint (parity with the web login flow).
 	loginRateLimiter := NewLoginRateLimiter(5, 10*time.Minute, 15*time.Minute)

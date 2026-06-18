@@ -1,0 +1,65 @@
+---
+title: "Agent liveness, AI action confirmation, and auth-secret hardening"
+date: "2026-06-17"
+project: "docvault"
+kind: "hardening"
+visibility: "public"
+language: "en"
+summary: "Changed agent status from event-based to heartbeat-based liveness, fixed hostname-wide assignment across clipboard/osquery rows, put deterministic confirmation gates in front of mutating AI tools, and encrypted new TOTP seeds at rest."
+tags: ["agents", "ai-agent", "security", "auth", "tests"]
+---
+
+## What changed
+
+This pass targeted two handoff gaps that were locally fixable without a real Windows desktop:
+
+- The operator needs to know whether an installed PC is **reporting**, not merely whether it has produced a recent suspicious event.
+- The AI assistant's mutating tools must not be callable just because attacker-controlled event data convinced the model to call them.
+
+## Agent liveness
+
+`endpoint_agents.last_checkin` already existed, but the Agent Status page's first table was built from `endpoint_events.MAX(event_time)`. That made "online" mean "had an event recently", which is the wrong signal for a quiet but healthy PC.
+
+The server now touches the agent row when:
+
+- clipboard events arrive;
+- osquery batches arrive;
+- osquery TLS nodes successfully authenticate for config/log polling.
+
+The admin page now uses `last_checkin` as "Last Report", shows `보고중` for agents seen within 10 minutes, and displays an offline warning banner when any agent has gone stale.
+
+While in this area, host assignment was tightened to match the product model: assigning a PC now updates all `endpoint_agents` rows for that hostname (for example both `clipboard` and `osquery`) and back-fills events for the host. User lookup also picks the latest active non-null assignment instead of whichever row the database returned first.
+
+## AI action confirmation
+
+The system prompt already warned the model not to follow instructions embedded in tool data, but prompt text is not an authorization boundary. Mutating tools now have `RequiresConfirmation=true`, and the engine enforces a two-step flow:
+
+1. If the model requests `create_user`, `assign_host`, or `acknowledge_alert`, the server returns a deterministic confirmation prompt and executes nothing.
+2. The action can run only when the next user message contains an explicit confirmation phrase such as `실행 승인` and the latest assistant message was that server-generated confirmation prompt.
+
+This means a malicious file name, process name, or window title can still appear in read output, but it cannot directly trigger a state-changing tool call in the same turn.
+
+## Tests
+
+Added unit tests for `internal/agent` and `internal/insight`:
+
+- read tools still execute normally;
+- mutating tools are blocked before confirmation;
+- mutating tools execute after a pending confirmation;
+- insight provider defaults and disabled-handler behavior are deterministic.
+
+Verified with `go test ./...`.
+
+## Auth-secret hardening
+
+New 2FA setup no longer stores the raw TOTP seed in `users.totp_secret`. Added `auth.SecretProtector`, which seals small secrets with AES-256-GCM using `DOCVAULT_MASTER_KEY` and stores them with an `enc:v1:` prefix. Migration `016_totp_secret_encryption` widens the column to `TEXT` because protected values exceed the old `VARCHAR(64)` plaintext size. API login, web 2FA login, and 2FA disable all decrypt protected values before validation.
+
+The rollout is backward-compatible: existing plaintext TOTP seeds still validate, so nobody gets locked out. They become encrypted when the user disables and re-enables 2FA.
+
+I also tightened the backup script: it had encrypted final `.enc` artifacts but still kept a plaintext `backups/vault_latest/` staging directory. The script now streams the vault tar directly into encryption and removes that old staging path.
+
+## Still open
+
+This does not prove real clipboard capture on a real Windows desktop. The remaining P0 field test is still: install the agent on one actual PC, copy/paste something observable, and confirm events flow into the live dashboard.
+
+Security-at-rest is also not completely finished: recovery codes are still plaintext, legacy TOTP seeds need rotation, and encrypted backup artifacts still need off-host copy verification.

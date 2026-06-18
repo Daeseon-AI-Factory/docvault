@@ -2,21 +2,26 @@
 <div class="card mb-2">
   <div class="card-header">Endpoint Agents</div>
   <p class="text-muted" style="padding:0.5rem 0;">
-    Agents connect via PSK authentication to POST events to <code>/api/events/osquery</code> and <code>/api/events/clipboard</code>.
+    Agents connect via PSK authentication and update this status whenever they enroll, poll config, or POST events.
   </p>
+  {{if .OfflineAgentCount}}
+  <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 12px;margin:.4rem 0 .8rem;color:#9a3412;">
+    <strong>오프라인 의심:</strong> {{.OfflineAgentCount}}대가 최근 {{.AgentOnlineWindowMinutes}}분 동안 보고하지 않았습니다. 대상 PC 전원, 네트워크, DocVaultClipAgent 서비스 상태를 확인하세요.
+  </div>
+  {{end}}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Hostname</th><th>Source</th><th>Last Event</th><th>Events (24h)</th><th>Status</th></tr></thead>
+      <thead><tr><th>Hostname</th><th>Source</th><th>Last Report</th><th>Events (24h)</th><th>Status</th></tr></thead>
       <tbody>
         {{range .Agents}}
         <tr>
           <td><strong>{{.Hostname}}</strong></td>
           <td><span class="badge badge-info">{{.Source}}</span></td>
-          <td class="text-muted">{{.LastEvent.Format "2006-01-02 15:04:05"}}</td>
+          <td class="text-muted">{{.LastCheckin.Format "2006-01-02 15:04:05"}}</td>
           <td>{{.EventCount}}</td>
           <td>
-            {{if .IsOnline}}<span class="badge badge-success">Online</span>
-            {{else}}<span class="badge badge-danger">Offline</span>{{end}}
+            {{if .IsOnline}}<span class="badge badge-success">보고중</span>
+            {{else}}<span class="badge badge-danger">오프라인</span>{{end}}
           </td>
         </tr>
         {{else}}

@@ -131,6 +131,20 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 <!-- skipped: 262d1ce Log backup encryption [no-log] -->
 <!-- skipped: 30abd7e Remove hardcoded dev secrets from compose and .env.example [no-log] -->
 
+## Backup encryption still left a plaintext vault staging copy
+
+- **Symptom**: although `db_*.dump.enc` and `vault_*.tar.gz.enc` were encrypted, the script also kept `/opt/docvault/backups/vault_latest/` as a plaintext rsync staging copy.
+- **Cause**: the archive was built from a local incremental staging directory to make tar creation convenient. That defeated the "encrypted at rest" claim for vault files.
+- **Fix**: `deploy/backup/backup.sh` now streams `tar` directly from the vault directory into `openssl enc` and removes any old `vault_latest` staging directory.
+- **Pattern**: backup encryption must include temporary/staging paths, not just final artifact filenames. If a staging copy remains, the backup is still plaintext at rest.
+
+## TOTP secrets were stored plaintext in `users.totp_secret`
+
+- **Symptom**: enabling 2FA wrote the base32 TOTP seed directly into `users.totp_secret`; a database leak would let an attacker generate valid second-factor codes.
+- **Cause**: the TOTP implementation validated the raw seed directly from the DB and had no small-secret encryption helper.
+- **Fix**: Added `auth.SecretProtector`, using AES-256-GCM with `DOCVAULT_MASTER_KEY` and an `enc:v1:` prefix. Migration `016_totp_secret_encryption` changes `users.totp_secret` to `TEXT` because protected values exceed the old plaintext-sized `VARCHAR(64)`. Web 2FA setup stores protected secrets, and API/web login + disable paths decrypt protected values before validation. Legacy plaintext values remain readable until users rotate 2FA.
+- **Pattern**: encrypt small auth seeds with the application master key, but keep prefix-based backward compatibility so existing users are not locked out during rollout.
+
 ## Login rate limit never tripped (keyed on IP:port instead of IP)
 
 - **Symptom**: After bringing the stack up with docker compose, 7 consecutive wrong logins to /api/auth/login all returned 401 — the 5-attempt lockout never fired (no 429).
@@ -190,6 +204,34 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Fix**: re-add the current public IP to ACG 22 via the NCP signed API before each SSH session. Verified by reconnecting.
 - **Pattern**: pinning SSH to a dynamic residential IP is fragile; use a stable jump IP / VPN, or accept re-adding the IP. A web-works-but-SSH-times-out split points at a firewall rule, not the host.
 <!-- skipped: 004859f Harden agent against prompt injection in tool data [no-log] -->
+
+## Agent status showed event activity, not agent liveness
+
+- **Symptom**: the Agent Status page could mark a healthy installed PC offline if it had not produced an endpoint event recently, and a newly installed agent with no captured clipboard/file activity had weak visibility after enrollment.
+- **Cause**: `endpoint_agents.last_checkin` existed, but the UI's primary status table was derived from `endpoint_events.MAX(event_time)`. Successful clipboard/osquery event posts and osquery TLS config/log polling did not consistently update `last_checkin`, so "last event" and "last report" were conflated.
+- **Fix**: Added `endpoint.Repository.TouchAgent` and call it from clipboard event ingest, osquery batch ingest, and osquery node-key auth. The admin page now uses `endpoint_agents.last_checkin` for "보고중/오프라인" and shows an offline warning when an agent has not reported for 10 minutes.
+- **Pattern**: monitoring agent health is a heartbeat/check-in concept, not an event-volume concept. Quiet but connected agents should still look alive.
+
+## Host assignment was source-row scoped instead of hostname scoped
+
+- **Symptom**: a PC can have both `clipboard` and `osquery` rows for the same hostname. Assigning one row to an employee could leave the other row unassigned, and hostname-to-user lookup could hit the wrong/null row.
+- **Cause**: `AssignAgent` updated one `endpoint_agents.id`, while `lookupUserByHostname` queried active rows by hostname without requiring a non-null user or deterministic latest row.
+- **Fix**: hostname lookup now chooses the latest active row with a non-null `user_id`. Web host assignment updates every `endpoint_agents` row for that hostname and back-fills all events for the host. The AI `assign_host` action now does the same and stores per-row previous state for rollback.
+- **Pattern**: the operator thinks in "PC/hostname", not "source row". Keep assignment semantics hostname-wide whenever downstream event attribution is hostname-wide.
+
+## AI action tools could run from tool-output prompt injection
+
+- **Symptom**: the AI assistant had read tools and mutating tools in the same tool-use loop. Attacker-controlled fields such as file names, process names, or window titles could enter tool output and influence a later model turn into calling `create_user`, `assign_host`, or `acknowledge_alert`.
+- **Cause**: the defense was primarily in the system prompt. Rollback reduced blast radius after the fact, but did not stop the action from running first.
+- **Fix**: action tools now carry `RequiresConfirmation=true`. If the model requests any mutating tool and the latest user turn is not an explicit confirmation following a server-generated confirmation prompt, the engine returns a deterministic confirmation message and executes nothing. The dashboard copy now tells admins that state changes require `실행 승인`.
+- **Pattern**: for tool-use agents, prompt instructions are not an authorization boundary. Gate mutating tools in deterministic application code and require a fresh human confirmation turn.
+
+## `internal/agent` and `internal/insight` had no unit tests
+
+- **Symptom**: the newest AI surfaces had no package-level tests even though they touched admin actions and paid/provider-specific API behavior.
+- **Cause**: they shipped as integration-oriented features first; the rest of the suite covered surrounding packages but not these two.
+- **Fix**: Added `internal/agent` tests for read tool execution, mutating-tool pre-confirmation blocking, and post-confirmation execution. Added `internal/insight` tests for provider default selection and the disabled summary handler's JSON 503 response.
+- **Pattern**: AI/provider code still needs deterministic unit tests around local control flow. Mock the provider; do not call external APIs in unit tests.
 
 ## Non-technical installer confusion: friend installed Docker, choked on the PSK placeholder
 

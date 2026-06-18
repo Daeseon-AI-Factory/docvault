@@ -22,7 +22,7 @@ See `docs/LIMITATIONS.md`.
 - **Stack**: Go 1.26, chi, pgx/PostgreSQL 16, JWT, AES-256-GCM (chunked), DB-trigger hash chain,
   html/template + htmx (SSR, no JS build), `//go:embed` for templates/static/migrations.
 - **Packages** (`internal/`): auth, user, vault, folder, audit, endpoint, alert, agent, insight,
-  monitoring, tracking, ueba, web, config, database. **15 migrations** (001–015).
+  monitoring, tracking, ueba, web, config, database. **16 migrations** (001–016).
 
 ## 3. What this session delivered
 
@@ -58,23 +58,22 @@ Real-Windows agent testing = `windows-latest` CI (dev Mac is Apple-Silicon; no u
 | Friend's actual PC | **Not installed yet** — needs a human to run the `.bat` (UAC/SmartScreen clicks). |
 | Clipboard CAPTURE on a real desktop | **Unverified** — CI proved *enroll/connect* only; capture needs an interactive session. |
 | osquery end-to-end | **Unverified** against a live daemon. |
-| AI agent prompt-injection | Tool output includes attacker-influenceable fields (file names, window titles) → can reach action tools. Rollback limits blast radius; the action still runs first. **Unmitigated.** |
-| Unit tests for `agent`/`insight` | **0.** Rest of suite passes. |
-| Security-at-rest (pre-"internet-safe") | TOTP secrets unencrypted at rest; backups unencrypted/local-only. (`docs/DEPLOY.md`) |
+| AI agent prompt-injection | **Mitigated in app code**: mutating tools now require a server-generated confirmation turn + explicit `실행 승인`. Tool-output fields are still attacker-influenceable and must stay treated as untrusted. |
+| Unit tests for `agent`/`insight` | Added deterministic unit tests for action confirmation and insight provider defaults. Rollback DB integration still needs coverage. |
+| Security-at-rest (pre-"internet-safe") | New/rotated TOTP secrets are encrypted with the master key. Legacy plaintext secrets remain readable until rotated; recovery codes still plaintext; backups are encrypted but still need off-host copy verification. (`docs/DEPLOY.md`) |
 | Dashboard stat discrepancy | Earlier "전체 이벤트" count looked off — unexplained, needs a look. |
 
 ## 6. Roadmap / direction (prioritized)
 
 **P0 — make it real for the first customer (the friend)**
 1. Get one real Windows PC installed and confirm **events actually flow** (enroll ≠ capture).
-2. Add a per-agent **"reporting / last seen"** liveness signal + offline alert, so the operator
-   knows a PC stopped reporting.
+2. Per-agent **"reporting / last seen"** liveness is now based on `endpoint_agents.last_checkin`
+   (enroll/config/event heartbeat). Remaining: production notification policy for offline alerts.
 
 **P1 — trust & safety of the new AI agent**
-3. Mitigate **prompt injection via tool output**: separate read-only vs action paths, require
-   explicit operator confirmation for mutating tools, and/or sanitize/flag attacker-controlled
-   fields before they enter the model context.
-4. **Unit tests** for `internal/agent` (tool dispatch, rollback inverse-state) and `internal/insight`.
+3. **Prompt injection via tool output** now has deterministic mutating-tool confirmation. Remaining:
+   sanitize/flag attacker-controlled fields in read output.
+4. More `internal/agent` tests: rollback inverse-state with a real test DB.
 
 **P2 — kill the onboarding friction**
 5. **Code-sign the agent binary** → removes SmartScreen entirely (the #1 non-techie blocker).
@@ -82,7 +81,8 @@ Real-Windows agent testing = `windows-latest` CI (dev Mac is Apple-Silicon; no u
    (no admin-only gate, no `.bat`-by-email problem). Keep the PSK server-side.
 
 **P2 — security hardening before any wider exposure**
-7. Encrypt TOTP secrets at rest (master key); encrypt + offsite the backups; verify osquery e2e.
+7. Finish security at rest: rotate legacy plaintext TOTP secrets, protect recovery codes, verify
+   encrypted backups are copied off-host, and verify osquery e2e.
 
 **P3 — depth**
 8. Audit what `internal/ueba` / `tracking` / `monitoring` actually do (present but unreviewed this

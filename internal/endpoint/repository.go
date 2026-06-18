@@ -66,10 +66,10 @@ type SearchParams struct {
 	EventType *EventType
 	FileName  *string
 	Source    *string
-	From     *time.Time
-	To       *time.Time
-	Limit    int
-	Offset   int
+	From      *time.Time
+	To        *time.Time
+	Limit     int
+	Offset    int
 }
 
 func (r *Repository) Search(ctx context.Context, params SearchParams) ([]*EndpointEvent, error) {
@@ -179,7 +179,7 @@ func (r *Repository) SearchByType(ctx context.Context, eventType EventType, limi
 type TimelineEntry struct {
 	Timestamp time.Time       `json:"timestamp"`
 	Source    string          `json:"source"`
-	EventType string         `json:"event_type"`
+	EventType string          `json:"event_type"`
 	FileName  string          `json:"file_name"`
 	Detail    json.RawMessage `json:"detail,omitempty"`
 	IPAddress *string         `json:"ip_address,omitempty"`
@@ -233,6 +233,26 @@ type AgentRow struct {
 	EventCount  int64
 }
 
+// TouchAgent records that an agent was just seen. Event posts, osquery config
+// polls, and explicit enrolls all count as liveness; otherwise an idle but
+// healthy agent can look offline just because there were no suspicious events.
+func (r *Repository) TouchAgent(ctx context.Context, hostname, source string) error {
+	if hostname == "" || source == "" {
+		return nil
+	}
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO endpoint_agents (hostname, source, last_checkin, is_active)
+		 VALUES ($1, $2, NOW(), true)
+		 ON CONFLICT (hostname, source)
+		 DO UPDATE SET last_checkin = NOW(), is_active = true`,
+		hostname, source,
+	)
+	if err != nil {
+		return fmt.Errorf("touch agent %s/%s: %w", hostname, source, err)
+	}
+	return nil
+}
+
 // ListAgents returns all registered agents with their assigned user (if any) and
 // a 24h event count, most recently seen first.
 func (r *Repository) ListAgents(ctx context.Context) ([]*AgentRow, error) {
@@ -271,10 +291,15 @@ func (r *Repository) AssignAgent(ctx context.Context, agentID int64, userID *int
 
 	var hostname string
 	if err := tx.QueryRow(ctx,
-		`UPDATE endpoint_agents SET user_id = $1 WHERE id = $2 RETURNING hostname`,
-		userID, agentID,
+		`SELECT hostname FROM endpoint_agents WHERE id = $1`, agentID,
 	).Scan(&hostname); err != nil {
-		return fmt.Errorf("assign agent %d: %w", agentID, err)
+		return fmt.Errorf("find agent %d: %w", agentID, err)
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE endpoint_agents SET user_id = $1 WHERE hostname = $2`,
+		userID, hostname,
+	); err != nil {
+		return fmt.Errorf("assign host %s: %w", hostname, err)
 	}
 	if _, err := tx.Exec(ctx,
 		`UPDATE endpoint_events SET user_id = $1 WHERE hostname = $2`, userID, hostname,

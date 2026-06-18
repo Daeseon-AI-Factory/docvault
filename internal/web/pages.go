@@ -87,6 +87,7 @@ type PageHandler struct {
 	fileTracker    FileTrackerUI
 	pskConfigured  bool
 	agentPSK       string
+	totpProtector  *auth.SecretProtector
 	rateLimiter    *LoginRateLimiter
 	logger         *slog.Logger
 }
@@ -105,6 +106,7 @@ type PageHandlerDeps struct {
 	FileTracker    FileTrackerUI
 	PSKConfigured  bool
 	AgentPSK       string
+	TOTPProtector  *auth.SecretProtector
 	Logger         *slog.Logger
 }
 
@@ -128,6 +130,7 @@ func NewPageHandler(deps PageHandlerDeps) (*PageHandler, error) {
 		fileTracker:    deps.FileTracker,
 		pskConfigured:  deps.PSKConfigured,
 		agentPSK:       deps.AgentPSK,
+		totpProtector:  deps.TOTPProtector,
 		rateLimiter:    NewLoginRateLimiter(5, 10*time.Minute, 15*time.Minute),
 		logger:         deps.Logger,
 	}, nil
@@ -316,6 +319,20 @@ func (h *PageHandler) issueSessionCookies(w http.ResponseWriter, u *user.User) {
 	})
 }
 
+func (h *PageHandler) sealTOTPSecret(secret string) (string, error) {
+	if h.totpProtector == nil {
+		return secret, nil
+	}
+	return h.totpProtector.Seal(secret)
+}
+
+func (h *PageHandler) openTOTPSecret(stored string) (string, error) {
+	if h.totpProtector == nil {
+		return stored, nil
+	}
+	return h.totpProtector.Open(stored)
+}
+
 func (h *PageHandler) logAudit(r *http.Request, userID int64, action audit.Action, statusCode int) {
 	if h.auditRepo == nil {
 		return
@@ -377,7 +394,15 @@ func (h *PageHandler) Login2FASubmit(w http.ResponseWriter, r *http.Request) {
 
 	valid := false
 	if code != "" {
-		valid = auth.ValidateTOTP(u.TOTPSecret, code)
+		secret, err := h.openTOTPSecret(u.TOTPSecret)
+		if err != nil {
+			if h.logger != nil {
+				h.logger.Error("2fa login: decrypt totp secret", "error", err, "user_id", u.ID)
+			}
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		valid = auth.ValidateTOTP(secret, code)
 	} else if recoveryCode != "" {
 		// Check recovery code
 		var codeID int64
@@ -457,9 +482,15 @@ func (h *PageHandler) TwoFactorVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	protectedSecret, err := h.sealTOTPSecret(secret)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
 	// Save secret and enable 2FA
-	_, err := h.db.Exec(r.Context(),
-		`UPDATE users SET totp_secret = $1, totp_enabled = true WHERE id = $2`, secret, u.ID)
+	_, err = h.db.Exec(r.Context(),
+		`UPDATE users SET totp_secret = $1, totp_enabled = true WHERE id = $2`, protectedSecret, u.ID)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -489,6 +520,11 @@ func (h *PageHandler) TwoFactorDisable(w http.ResponseWriter, r *http.Request) {
 	// Load current secret
 	var secret string
 	h.db.QueryRow(r.Context(), `SELECT COALESCE(totp_secret,'') FROM users WHERE id = $1`, u.ID).Scan(&secret)
+	secret, err := h.openTOTPSecret(secret)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 
 	if !auth.ValidateTOTP(secret, code) {
 		data := h.pageData(r, "2FA Settings", "account")
@@ -867,32 +903,35 @@ func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type agentInfo struct {
-		Hostname   string
-		Source     string
-		LastEvent  time.Time
-		EventCount int64
-		IsOnline   bool
+		Hostname    string
+		Source      string
+		LastCheckin time.Time
+		EventCount  int64
+		IsOnline    bool
 	}
 
-	rows, err := h.db.Query(r.Context(),
-		`SELECT hostname, source, MAX(event_time) as last_event, COUNT(*) as cnt
-		 FROM endpoint_events WHERE event_time >= NOW() - INTERVAL '7 days'
-		 GROUP BY hostname, source ORDER BY last_event DESC`)
-
+	regAgents, _ := h.endpointRepo.ListAgents(r.Context())
+	onlineWindow := 10 * time.Minute
 	var agents []agentInfo
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var a agentInfo
-			if err := rows.Scan(&a.Hostname, &a.Source, &a.LastEvent, &a.EventCount); err == nil {
-				a.IsOnline = time.Since(a.LastEvent) < 10*time.Minute
-				agents = append(agents, a)
-			}
+	offlineCount := 0
+	for _, row := range regAgents {
+		isOnline := row.IsActive && time.Since(row.LastCheckin) < onlineWindow
+		if !isOnline {
+			offlineCount++
 		}
+		agents = append(agents, agentInfo{
+			Hostname:    row.Hostname,
+			Source:      row.Source,
+			LastCheckin: row.LastCheckin,
+			EventCount:  row.EventCount,
+			IsOnline:    isOnline,
+		})
 	}
 
 	data := h.pageData(r, "Agent Status", "admin-agents")
 	data["Agents"] = agents
+	data["OfflineAgentCount"] = offlineCount
+	data["AgentOnlineWindowMinutes"] = int(onlineWindow / time.Minute)
 	data["PSKConfigured"] = h.pskConfigured
 	data["AgentPSK"] = h.agentPSK
 	scheme := "https"
@@ -900,9 +939,7 @@ func (h *PageHandler) AdminAgentsPage(w http.ResponseWriter, r *http.Request) {
 		scheme = xfp
 	}
 	data["ServerURL"] = scheme + "://" + r.Host
-	if regAgents, err := h.endpointRepo.ListAgents(r.Context()); err == nil {
-		data["RegisteredAgents"] = regAgents
-	}
+	data["RegisteredAgents"] = regAgents
 	if allUsers, err := h.userRepo.List(r.Context()); err == nil {
 		data["AllUsers"] = allUsers
 	}
