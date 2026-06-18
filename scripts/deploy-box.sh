@@ -36,7 +36,9 @@ echo "==> build + recreate + prune (on box)"
 ${SSH} "${DOCVAULT_DEPLOY_HOST}" "
   set -e
   docker build -t docvault:latest '${DOCVAULT_DEPLOY_SRC}' 2>&1 | tail -2
-  cd '${DOCVAULT_DEPLOY_COMPOSE}' && docker compose up -d --force-recreate docvault 2>&1 | tail -2
+  cd '${DOCVAULT_DEPLOY_COMPOSE}'
+  docker compose run --rm docvault-migrate
+  docker compose up -d --force-recreate docvault 2>&1 | tail -2
   docker builder prune -af >/dev/null 2>&1
   echo -n 'root disk: '; df -h / | tail -1
 "
