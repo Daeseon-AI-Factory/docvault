@@ -111,8 +111,9 @@ The server now implements the osquery TLS protocol at `/api/osquery/enroll|confi
 
 These are tracked and not yet done:
 
-- TOTP secrets and recovery codes are stored unencrypted at rest (encrypt with the master key).
-- Backups (`deploy/backup/backup.sh`) are unencrypted and local-only.
+- New/rotated TOTP secrets are encrypted at rest with the master key. Existing plaintext TOTP secrets remain valid until users rotate 2FA.
+- TOTP recovery codes are still stored plaintext; protect them before wider internet exposure.
+- Backups (`deploy/backup/backup.sh`) are encrypted, but copying encrypted artifacts off-host is still an operational TODO.
 - osquery end-to-end is unverified against a live daemon.
 
 For Scenario B (all-in-one on a single trusted PC, LAN only) these matter less; for Scenario A (internet-exposed) close them before relying on it.

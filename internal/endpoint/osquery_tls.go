@@ -143,6 +143,14 @@ func (h *Handler) nodeFromKey(ctx context.Context, nodeKey string) (string, *int
 	if err != nil {
 		return "", nil, false
 	}
+	if _, err := h.db.Exec(ctx,
+		`UPDATE endpoint_agents SET last_checkin = NOW(), is_active = true WHERE node_key = $1`,
+		nodeKey,
+	); err != nil {
+		if h.logger != nil {
+			h.logger.Warn("osquery touch node", "hostname", hostname, "error", err)
+		}
+	}
 	return hostname, userID, true
 }
 

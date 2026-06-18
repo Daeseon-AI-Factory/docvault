@@ -131,6 +131,20 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 <!-- skipped: 262d1ce Log backup encryption [no-log] -->
 <!-- skipped: 30abd7e Remove hardcoded dev secrets from compose and .env.example [no-log] -->
 
+## Backup encryption still left a plaintext vault staging copy
+
+- **Symptom**: although `db_*.dump.enc` and `vault_*.tar.gz.enc` were encrypted, the script also kept `/opt/docvault/backups/vault_latest/` as a plaintext rsync staging copy.
+- **Cause**: the archive was built from a local incremental staging directory to make tar creation convenient. That defeated the "encrypted at rest" claim for vault files.
+- **Fix**: `deploy/backup/backup.sh` now streams `tar` directly from the vault directory into `openssl enc` and removes any old `vault_latest` staging directory.
+- **Pattern**: backup encryption must include temporary/staging paths, not just final artifact filenames. If a staging copy remains, the backup is still plaintext at rest.
+
+## TOTP secrets were stored plaintext in `users.totp_secret`
+
+- **Symptom**: enabling 2FA wrote the base32 TOTP seed directly into `users.totp_secret`; a database leak would let an attacker generate valid second-factor codes.
+- **Cause**: the TOTP implementation validated the raw seed directly from the DB and had no small-secret encryption helper.
+- **Fix**: Added `auth.SecretProtector`, using AES-256-GCM with `DOCVAULT_MASTER_KEY` and an `enc:v1:` prefix. Migration `016_totp_secret_encryption` changes `users.totp_secret` to `TEXT` because protected values exceed the old plaintext-sized `VARCHAR(64)`. Web 2FA setup stores protected secrets, and API/web login + disable paths decrypt protected values before validation. Legacy plaintext values remain readable until users rotate 2FA.
+- **Pattern**: encrypt small auth seeds with the application master key, but keep prefix-based backward compatibility so existing users are not locked out during rollout.
+
 ## Login rate limit never tripped (keyed on IP:port instead of IP)
 
 - **Symptom**: After bringing the stack up with docker compose, 7 consecutive wrong logins to /api/auth/login all returned 401 — the 5-attempt lockout never fired (no 429).
@@ -191,6 +205,34 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Pattern**: pinning SSH to a dynamic residential IP is fragile; use a stable jump IP / VPN, or accept re-adding the IP. A web-works-but-SSH-times-out split points at a firewall rule, not the host.
 <!-- skipped: 004859f Harden agent against prompt injection in tool data [no-log] -->
 
+## Agent status showed event activity, not agent liveness
+
+- **Symptom**: the Agent Status page could mark a healthy installed PC offline if it had not produced an endpoint event recently, and a newly installed agent with no captured clipboard/file activity had weak visibility after enrollment.
+- **Cause**: `endpoint_agents.last_checkin` existed, but the UI's primary status table was derived from `endpoint_events.MAX(event_time)`. Successful clipboard/osquery event posts and osquery TLS config/log polling did not consistently update `last_checkin`, so "last event" and "last report" were conflated.
+- **Fix**: Added `endpoint.Repository.TouchAgent` and call it from clipboard event ingest, osquery batch ingest, and osquery node-key auth. The admin page now uses `endpoint_agents.last_checkin` for "보고중/오프라인" and shows an offline warning when an agent has not reported for 10 minutes.
+- **Pattern**: monitoring agent health is a heartbeat/check-in concept, not an event-volume concept. Quiet but connected agents should still look alive.
+
+## Host assignment was source-row scoped instead of hostname scoped
+
+- **Symptom**: a PC can have both `clipboard` and `osquery` rows for the same hostname. Assigning one row to an employee could leave the other row unassigned, and hostname-to-user lookup could hit the wrong/null row.
+- **Cause**: `AssignAgent` updated one `endpoint_agents.id`, while `lookupUserByHostname` queried active rows by hostname without requiring a non-null user or deterministic latest row.
+- **Fix**: hostname lookup now chooses the latest active row with a non-null `user_id`. Web host assignment updates every `endpoint_agents` row for that hostname and back-fills all events for the host. The AI `assign_host` action now does the same and stores per-row previous state for rollback.
+- **Pattern**: the operator thinks in "PC/hostname", not "source row". Keep assignment semantics hostname-wide whenever downstream event attribution is hostname-wide.
+
+## AI action tools could run from tool-output prompt injection
+
+- **Symptom**: the AI assistant had read tools and mutating tools in the same tool-use loop. Attacker-controlled fields such as file names, process names, or window titles could enter tool output and influence a later model turn into calling `create_user`, `assign_host`, or `acknowledge_alert`.
+- **Cause**: the defense was primarily in the system prompt. Rollback reduced blast radius after the fact, but did not stop the action from running first.
+- **Fix**: action tools now carry `RequiresConfirmation=true`. If the model requests any mutating tool and the latest user turn is not an explicit confirmation following a server-generated confirmation prompt, the engine returns a deterministic confirmation message and executes nothing. The dashboard copy now tells admins that state changes require `실행 승인`.
+- **Pattern**: for tool-use agents, prompt instructions are not an authorization boundary. Gate mutating tools in deterministic application code and require a fresh human confirmation turn.
+
+## `internal/agent` and `internal/insight` had no unit tests
+
+- **Symptom**: the newest AI surfaces had no package-level tests even though they touched admin actions and paid/provider-specific API behavior.
+- **Cause**: they shipped as integration-oriented features first; the rest of the suite covered surrounding packages but not these two.
+- **Fix**: Added `internal/agent` tests for read tool execution, mutating-tool pre-confirmation blocking, and post-confirmation execution. Added `internal/insight` tests for provider default selection and the disabled summary handler's JSON 503 response.
+- **Pattern**: AI/provider code still needs deterministic unit tests around local control flow. Mock the provider; do not call external APIs in unit tests.
+
 ## Non-technical installer confusion: friend installed Docker, choked on the PSK placeholder
 
 - **Symptom**: a non-technical end user, told to install the Windows agent, instead opened **Docker Desktop** (unrelated) which failed with `There was a problem with WSL ... wsl.exe --version: exit status 0xffffffff`. Separately they asked what to put for the install command's `관리자에게-받은-인증키` (PSK) placeholder — i.e. the manual PSK substitution + "run PowerShell as admin" steps were too technical.
@@ -198,6 +240,7 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Fix**: Commit bf2c948bad2182f97c4b8bcde9627885d3558c48. Added an admin-only one-click installer endpoint `GET /admin/agent-installer.bat` (`PageHandler.AgentInstaller` in internal/web/pages.go) that bakes the server URL + PSK into a self-elevating `.bat`: it UAC-elevates, downloads `dvclip.exe`, writes `DOCVAULT_SERVER_URL`/`DOCVAULT_AGENT_PSK` into the **service's own registry `Environment` (REG_MULTI_SZ)** so the service reads them without a reboot, then installs + starts. Added a prominent download button on the Agent Status page (admin_agents.html), moved the manual PowerShell path into a `<details>`, and pointed manual.ko.html at the one-click flow. The friend now just double-clicks one file.
 - **Commit**: bf2c948bad2182f97c4b8bcde9627885d3558c48
 - **Pattern**: for non-technical end users, never ship a copy-paste-and-substitute install. Generate a per-deploy installer with secrets baked in server-side (admin-only download) and use a self-elevating wrapper so it's one double-click. Bake service env into the service's registry `Environment` key, not machine env, to avoid reboot/refresh races.
+- **Verified**: real amd64 Windows (GitHub Actions `windows-latest`, workflow `.github/workflows/win-install-test.yml`, run 27661890975). After `dvclip.exe install` → `reg add ...\DocVaultClipAgent /v Environment /t REG_MULTI_SZ /d "DOCVAULT_SERVER_URL=...\0DOCVAULT_AGENT_PSK=..."` → `net start`, the service reached `STATE: 4 RUNNING` and POSTed `/api/enroll` to the configured URL with header `X-Agent-PSK: <psk>` (listener log: `HIT port=9099 method=POST path=/api/enroll psk=ci-test-psk-123`). So the SCM does apply the per-service `Environment` REG_MULTI_SZ to the process and the Go agent reads both vars via `os.Getenv` with no reboot — the risky claim holds. UAC + SmartScreen clicks remain inherently manual (no automation clicks a secure-desktop prompt); those are covered by the visual guide only.
 <!-- skipped: bbb44f1 Fix commit hash in one-click installer troubleshooting entry [no-log] -->
 
 ## Even a one-click .bat trips non-technical users: SmartScreen + email blocks the file
@@ -207,3 +250,13 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Fix**: Commit 0988b03bb6e87833e22fd089dcfbbb6363d4b429. Rewrote `internal/web/static/install-windows.ko.html` (served at `/download/install-windows.ko.html`) into a one-click-first visual guide with CSS **mockups of each dialog** (Security Warning / UAC / SmartScreen with the "추가 정보 → 실행" two-step / cmd "설치 완료") showing exactly which button to press; moved the PowerShell path into a `<details>` fallback. The Agent Status card (`admin_agents.html`) now warns that **email blocks `.bat` (use KakaoTalk/USB)**, links the guide to forward to the employee, and recommends **remote install (AnyDesk/TeamViewer)** as the most reliable path for non-technical users.
 - **Commit**: 0988b03bb6e87833e22fd089dcfbbb6363d4b429
 - **Pattern**: an unsigned Windows installer ALWAYS trips SmartScreen — guide users with recognizable dialog mockups and name the exact button, don't just say "click Run". And never deliver a `.bat` by email (silently blocked); use a messenger/USB/link, or remote-install it for non-technical users.
+<!-- skipped: 9338d4e Add Windows install-mechanism end-to-end CI test [no-log] -->
+
+## Install download + guide were not reachable as one in-app page
+
+- **Symptom**: the admin couldn't reach "install" from the web app as a single place. The `.bat` download button lived buried inside the Agent Status page (mixed with the agent list), and the install guide was a separate static page (`/download/install-windows.ko.html`) that opened in a new browser tab — not an in-app page. The operator expected to click one nav item and land on a page with both the download and the instructions.
+- **Cause**: the download (admin-only, PSK-bearing) and the public friend-facing guide were deliberately separate artifacts; there was no in-app page that composed them, and the sidebar only linked the external static guide.
+- **Fix**: Commit e60a363. Added an in-app, admin-only page `GET /admin/install` (`PageHandler.InstallPage` → `templates/admin_install.html`, registered in `render.go` layoutPages) that combines the one-click `.bat` download button + transfer guidance (KakaoTalk/USB, email-blocks-.bat warning, remote-install tip) + the step-by-step visual dialog guide (the same Security Warning / UAC / SmartScreen / cmd-done mockups). Added a sidebar nav item "📥 Install Agent / 에이전트 설치" under Admin (`layout.html` + i18n dict) and the route in `router.go`. Verified live: `/admin/install` returns 200 with the download button, the SmartScreen mockup, and the nav link present on the dashboard.
+- **Commit**: e60a363
+- **Pattern**: when a workflow spans an admin-only secret (the installer) and public instructions, give the operator one in-app page that composes both, rather than scattering the pieces across a status page and an external static file.
+<!-- skipped: 9338d4e Add Windows install-mechanism end-to-end CI test [no-log] -->

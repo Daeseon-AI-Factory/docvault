@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/JasonAIFactory/Product024_JasonDRM/internal/agent"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/alert"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/audit"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/auth"
@@ -17,7 +18,6 @@ import (
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/database"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/endpoint"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/folder"
-	"github.com/JasonAIFactory/Product024_JasonDRM/internal/agent"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/insight"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/monitoring"
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/tracking"
@@ -202,6 +202,10 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("create key manager: %w", err)
 	}
+	totpProtector, err := auth.NewSecretProtector(cfg.MasterKey)
+	if err != nil {
+		return fmt.Errorf("create totp secret protector: %w", err)
+	}
 
 	storage, err := vault.NewStorage(cfg.VaultPath)
 	if err != nil {
@@ -282,6 +286,7 @@ func run(logger *slog.Logger) error {
 		FileTracker:    trackerBridge,
 		PSKConfigured:  cfg.OsqueryPSK != "",
 		AgentPSK:       cfg.OsqueryPSK,
+		TOTPProtector:  totpProtector,
 		Logger:         logger,
 	})
 	if err != nil {
@@ -315,6 +320,7 @@ func run(logger *slog.Logger) error {
 		SSEHub:          sseHub,
 		InsightHandler:  insightHandler,
 		AgentHandler:    agentHandler,
+		TOTPProtector:   totpProtector,
 		Logger:          logger,
 	})
 

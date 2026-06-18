@@ -12,10 +12,11 @@ import (
 )
 
 type Handler struct {
-	db       *pgxpool.Pool
-	jwt      *JWTService
-	logger   *slog.Logger
-	auditLog AuditLogFunc
+	db              *pgxpool.Pool
+	jwt             *JWTService
+	logger          *slog.Logger
+	auditLog        AuditLogFunc
+	secretProtector *SecretProtector
 }
 
 type AuditLogFunc func(ctx context.Context, userID int64, action string, statusCode int, r *http.Request)
@@ -26,6 +27,10 @@ func NewHandler(db *pgxpool.Pool, jwt *JWTService, logger *slog.Logger, auditLog
 		h.auditLog = auditLog[0]
 	}
 	return h
+}
+
+func (h *Handler) SetSecretProtector(protector *SecretProtector) {
+	h.secretProtector = protector
 }
 
 type loginRequest struct {
@@ -88,7 +93,16 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(map[string]any{"error": "two-factor code required", "requires_2fa": true})
 			return
 		}
-		if !ValidateTOTP(u.TOTPSecret, req.TOTPCode) {
+		secret, err := h.openTOTPSecret(u.TOTPSecret)
+		if err != nil {
+			h.logAudit(r, u.ID, "login", http.StatusInternalServerError)
+			if h.logger != nil {
+				h.logger.Error("login: decrypt totp secret", "error", err, "user_id", u.ID)
+			}
+			http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+			return
+		}
+		if !ValidateTOTP(secret, req.TOTPCode) {
 			h.logAudit(r, u.ID, "login", http.StatusUnauthorized)
 			http.Error(w, `{"error":"invalid two-factor code"}`, http.StatusUnauthorized)
 			return
@@ -117,6 +131,13 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	h.logAudit(r, u.ID, "login", http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *Handler) openTOTPSecret(stored string) (string, error) {
+	if h.secretProtector == nil {
+		return stored, nil
+	}
+	return h.secretProtector.Open(stored)
 }
 
 func (h *Handler) logAudit(r *http.Request, userID int64, action string, statusCode int) {

@@ -56,6 +56,7 @@ func newTemplateCache() (*templateCache, error) {
 		"admin_user_edit.html",
 		"admin_alerts.html",
 		"admin_agents.html",
+		"admin_install.html",
 		"admin_monitoring.html",
 		"events_search.html",
 		"totp_setup.html",

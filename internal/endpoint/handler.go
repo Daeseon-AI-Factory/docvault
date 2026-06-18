@@ -122,7 +122,9 @@ func (h *Handler) requirePSK(w http.ResponseWriter, r *http.Request, headerNames
 func (h *Handler) lookupUserByHostname(ctx context.Context, hostname string) *int64 {
 	var userID int64
 	err := h.db.QueryRow(ctx,
-		`SELECT user_id FROM endpoint_agents WHERE hostname = $1 AND is_active = true`, hostname,
+		`SELECT user_id FROM endpoint_agents
+		 WHERE hostname = $1 AND is_active = true AND user_id IS NOT NULL
+		 ORDER BY last_checkin DESC LIMIT 1`, hostname,
 	).Scan(&userID)
 	if err != nil {
 		return nil
@@ -185,6 +187,11 @@ func (h *Handler) processOsqueryBatch(ctx context.Context, batch *OsqueryBatch) 
 	}
 
 	hostnameMap := h.buildHostnameMap(ctx, hostnames)
+	for _, hostname := range hostnames {
+		if err := h.repo.TouchAgent(ctx, hostname, "osquery"); err != nil {
+			h.logger.Warn("touch osquery agent", "hostname", hostname, "error", err)
+		}
+	}
 
 	// Use DB-based disguise checker if available
 	var checker ExtensionDisguiseChecker
@@ -248,6 +255,9 @@ func (h *Handler) ReceiveClipboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hostnameMap := h.buildHostnameMap(r.Context(), []string{ce.Hostname})
+	if err := h.repo.TouchAgent(r.Context(), ce.Hostname, "clipboard"); err != nil {
+		h.logger.Warn("touch clipboard agent", "hostname", ce.Hostname, "error", err)
+	}
 	event := NormalizeClipboardEvent(&ce, hostnameMap)
 
 	if err := h.repo.Insert(r.Context(), event); err != nil {

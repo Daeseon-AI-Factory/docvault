@@ -1,0 +1,77 @@
+---
+title: "Honest retro: shipping the agent onboarding (what went wrong, both sides)"
+date: "2026-06-17"
+project: "docvault"
+kind: "tech-retro"
+visibility: "public"
+language: "en"
+summary: "Candid post-mortem of building the one-click Windows installer + guides + in-app install page: the assistant's mistakes, the environment dead-ends, the real-world gotchas, and the process friction. No sugarcoating."
+tags: ["retro", "onboarding", "windows", "process"]
+---
+
+This is the unvarnished version. Recorded because the lessons cost real time.
+
+## Assistant (Claude) mistakes — these are on me
+
+1. **Declared "done" before verifying, repeatedly.** I said the manual was idiot-proof, said the installer "works," said "다 끝났다" — and each time the user had to push back ("진짜?", "다 끝난거지?", "냉정하게 검증함?") before I actually went and checked. The work was usually fine, but announcing success from *intention* instead of *evidence* is the core failure. **Lesson: run it / curl it / screenshot it first, then report.**
+
+2. **Lost track of which git branch I was on.** The entire session's work was on `feat/mgmt-ai-agent`, but I acted as if it were on `main`. When I ran `git checkout main`, files reverted to an old state and a `git stash pop` conflicted — for a moment it looked like everything was lost. It wasn't (it was committed on feat and pushed), but I caused a genuine scare. **Lesson: `git branch --show-current` before any destructive git op; never assume.**
+
+3. **The amend-hash dance, twice.** I wrote a troubleshooting entry containing the commit's own hash, then ran `git commit --amend` — which *changes* the hash — leaving the baked-in hash stale and needing a follow-up `[no-log]` fix commit. Did it for `bf2c948` and again for `0988b03`. **Lesson: never amend after writing a hash into a tracked file; commit, then fill the hash in a separate follow-up.**
+
+4. **Rebuilt the install guide three times.** Text-only PowerShell guide → rewrote with CSS dialog mockups → rewrote again as an in-app `/admin/install` page. Because I never pinned down what "make the download page solid, reachable from the web" meant (a static page? an in-app route?) before building. **Lesson: confirm the shape/destination of a UX deliverable before writing it — ask, don't guess and build the wrong thing.**
+
+5. **Missed that the friend can't self-download the installer.** The `.bat` is admin-only because it carries the PSK; I initially implied a single page link would let the friend get everything. **Lesson: trace the actual actor and their permissions through the whole flow before describing it.**
+
+6. **Redeploy churn.** Rebuilt + redeployed the Docker image many times (each needing `docker builder prune` to avoid filling the 10 GB root disk), because I shipped the install UX piecemeal. **Lesson: design the whole small feature, then deploy once.**
+
+7. **My own test scaffolding had bugs.** zsh word-splitting on unquoted vars broke test loops; PowerShell here-string/quoting was a landmine in the CI workflow (had to switch to an array-join). **Lesson: test harness deserves the same care as product code.**
+
+## Environment dead-ends (time spent ruling things out)
+
+- AWS creds were dead (`InvalidClientTokenId`) → no AWS Windows box.
+- No local hypervisor + Apple-Silicon Mac (amd64 Windows = unusably slow under emulation) → local VM was a dead end. Pivoted to **GitHub Actions `windows-latest`**, which worked and gave a real verification.
+- SSH into the shared prod box was repeatedly blocked by the safety classifier until the user gave explicit per-segment approval — several hard stops.
+- Direct push to `main` was blocked by the classifier → had to use a branch + PR (which, in hindsight, was the right flow anyway).
+
+## Real-world product gotchas found the hard way
+
+- The friend opened **Docker Desktop** (completely unneeded — the agent is a standalone binary) and hit a WSL error. Concrete proof the install wasn't idiot-proof yet.
+- **`.bat` files are silently blocked by Gmail and some messengers** → you cannot email the installer; must use KakaoTalk/USB or remote-install.
+- Unsigned binary → **SmartScreen always fires**, and its Run button is hidden behind a small "추가 정보" link — exactly where a non-techie gives up.
+
+## Process friction (both sides, honestly)
+
+- Requirements surfaced mid-build and shifted ("make a download page" → later "no, reachable *inside* the web app"), which caused two rebuilds. Half on me for not asking the clarifying question up front; half just the nature of figuring it out live.
+- A lot of the loop was: I claim → user distrusts → I finally verify. That loop would shrink to nothing if I verified before claiming (see #1).
+
+## What actually worked
+
+- **Behavioral verification on real Windows** (CI run `27661890975`): proved the registry-`Environment` install mechanism makes the service read its config and connect with no reboot.
+- One **in-app `/admin/install`** page composing the download + the visual guide.
+- Co-located deploy on the shared NCP box via rsync without breaking the other project on it.
+
+## How we now PREVENT each of these (guardrails in place, not just "lessons")
+
+Words don't prevent recurrence; mechanisms do. Each mistake above is now backed by something enforceable:
+
+| Mistake | Guardrail now in place |
+|---|---|
+| Claimed "done" without checking | **CLAUDE.md Guardrail #1** — a deliverable can't be reported done without pasting this-turn proof (curl status / `/health` 200 / screenshot / CI). |
+| Lost track of git branch | **CLAUDE.md Guardrail #2** — `git branch --show-current` before any git surgery; `main` is PR-only. |
+| `amend` broke the logged hash (×2) | **CLAUDE.md Guardrail #3** — commit → read hash → write it → log in a *separate* commit; never amend after baking a hash. |
+| Rebuilt the guide 3× | **CLAUDE.md Guardrail #4** — confirm the shape/actor of a UX deliverable before building; ask one question instead of guessing. |
+| Redeploy churn + filled root disk | **`scripts/deploy-box.sh`** — one command does rsync → build → recreate → `builder prune` → verify `/health`; config in gitignored `scripts/.deploy.env`. |
+| SmartScreen / `.bat`-email surprises | **CLAUDE.md Guardrail #6** — treated as givens now (signed-less install, KakaoTalk/USB delivery, dialog-mockup guide, remote install). |
+| Test-harness shell bugs | **CLAUDE.md Guardrail #7** — `bash` not `zsh`, quote every variable; real-Windows testing = `windows-latest` CI. |
+
+These live in [CLAUDE.md → "Guardrails (learned the hard way)"](../../../CLAUDE.md), which is loaded into every session — so the prevention is automatic next time, not dependent on remembering this post.
+
+## Top lessons to keep
+
+1. Verify before you claim. Evidence over intention.
+2. Know your branch before git surgery.
+3. Don't `amend` after writing a hash into a file.
+4. Confirm the shape of a UX deliverable before building it.
+5. Unsigned Windows installers: SmartScreen + email-blocking are givens — design around them, don't discover them in the field.
+6. On Apple Silicon, "real amd64 Windows" testing = CI (`windows-latest`), not a local VM.

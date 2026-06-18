@@ -49,8 +49,9 @@ func logAction(ctx context.Context, db *pgxpool.Pool, actionType string, targetI
 func actionTools() []Tool {
 	return []Tool{
 		{
-			Name:        "create_user",
-			Description: "새 사용자(직원)를 생성한다. username 필수. 임의 비밀번호로 생성되며 롤백(삭제) 가능.",
+			Name:                 "create_user",
+			Description:          "새 사용자(직원)를 생성한다. username 필수. 임의 비밀번호로 생성되며 롤백(삭제) 가능. 서버가 실행 전 관리자 확인을 요구한다.",
+			RequiresConfirmation: true,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -93,8 +94,9 @@ func actionTools() []Tool {
 			},
 		},
 		{
-			Name:        "assign_host",
-			Description: "PC(호스트)를 직원에게 배정한다. 그 호스트의 과거/미래 이벤트가 해당 직원에게 귀속된다. 롤백 가능.",
+			Name:                 "assign_host",
+			Description:          "PC(호스트)를 직원에게 배정한다. 그 호스트의 과거/미래 이벤트가 해당 직원에게 귀속된다. 롤백 가능. 서버가 실행 전 관리자 확인을 요구한다.",
+			RequiresConfirmation: true,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -109,30 +111,54 @@ func actionTools() []Tool {
 				if hostname == "" || username == "" {
 					return "", fmt.Errorf("hostname과 username이 필요합니다")
 				}
-				var agentID int64
-				var prevUser *int64
-				if err := db.QueryRow(ctx, `SELECT id, user_id FROM endpoint_agents WHERE hostname=$1 ORDER BY id LIMIT 1`, hostname).Scan(&agentID, &prevUser); err != nil {
+				rows, err := db.Query(ctx, `SELECT id, user_id FROM endpoint_agents WHERE hostname=$1 ORDER BY id`, hostname)
+				if err != nil {
+					return "", err
+				}
+				defer rows.Close()
+				var agentIDs []int64
+				prevAgents := []map[string]any{}
+				for rows.Next() {
+					var id int64
+					var prevUser *int64
+					if err := rows.Scan(&id, &prevUser); err != nil {
+						return "", err
+					}
+					agentIDs = append(agentIDs, id)
+					prev := map[string]any{"agent_id": id, "prev_user_id": int64(0)}
+					if prevUser != nil {
+						prev["prev_user_id"] = *prevUser
+					}
+					prevAgents = append(prevAgents, prev)
+				}
+				if err := rows.Err(); err != nil {
+					return "", err
+				}
+				if len(agentIDs) == 0 {
 					return fmt.Sprintf(`{"error":"호스트를 찾을 수 없음: %s"}`, hostname), nil
 				}
 				var newUser int64
 				if err := db.QueryRow(ctx, `SELECT id FROM users WHERE username=$1`, username).Scan(&newUser); err != nil {
 					return fmt.Sprintf(`{"error":"사용자를 찾을 수 없음: %s"}`, username), nil
 				}
-				if _, err := db.Exec(ctx, `UPDATE endpoint_agents SET user_id=$1 WHERE id=$2`, newUser, agentID); err != nil {
+				var prevEventUser *int64
+				_ = db.QueryRow(ctx, `SELECT user_id FROM endpoint_events WHERE hostname=$1 AND user_id IS NOT NULL ORDER BY event_time DESC LIMIT 1`, hostname).Scan(&prevEventUser)
+				if _, err := db.Exec(ctx, `UPDATE endpoint_agents SET user_id=$1 WHERE hostname=$2`, newUser, hostname); err != nil {
 					return "", err
 				}
 				_, _ = db.Exec(ctx, `UPDATE endpoint_events SET user_id=$1 WHERE hostname=$2`, newUser, hostname)
-				prev := map[string]any{"agent_id": agentID, "hostname": hostname, "prev_user_id": int64(0)}
-				if prevUser != nil {
-					prev["prev_user_id"] = *prevUser
+				prev := map[string]any{"hostname": hostname, "agents": prevAgents}
+				if prevEventUser != nil {
+					prev["prev_event_user_id"] = *prevEventUser
 				}
-				aid, _ := logAction(ctx, db, "assign_host", agentID, fmt.Sprintf("호스트 %s → %s 배정", hostname, username), prev)
+				aid, _ := logAction(ctx, db, "assign_host", agentIDs[0], fmt.Sprintf("호스트 %s → %s 배정", hostname, username), prev)
 				return fmt.Sprintf(`{"ok":true,"hostname":%q,"assigned_to":%q,"action_id":%d}`, hostname, username, aid), nil
 			},
 		},
 		{
-			Name:        "acknowledge_alert",
-			Description: "경보(alert)를 확인 처리한다. 롤백하면 미확인 상태로 되돌린다.",
+			Name:                 "acknowledge_alert",
+			Description:          "경보(alert)를 확인 처리한다. 롤백하면 미확인 상태로 되돌린다. 서버가 실행 전 관리자 확인을 요구한다.",
+			RequiresConfirmation: true,
 			Parameters: map[string]any{
 				"type":       "object",
 				"properties": map[string]any{"alert_id": map[string]any{"type": "integer"}},
@@ -186,11 +212,33 @@ func Rollback(ctx context.Context, db *pgxpool.Pool, actionID int64) error {
 			}
 		}
 	case "assign_host":
+		restoredAgents := false
+		if agents, ok := prev["agents"].([]any); ok {
+			for _, raw := range agents {
+				item, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				agentID, ok := item["agent_id"].(float64)
+				if !ok || agentID == 0 {
+					continue
+				}
+				var pid any = nil
+				if v, ok := item["prev_user_id"].(float64); ok && v != 0 {
+					pid = int64(v)
+				}
+				_, _ = db.Exec(ctx, `UPDATE endpoint_agents SET user_id=$1 WHERE id=$2`, pid, int64(agentID))
+				restoredAgents = true
+			}
+		}
 		var pid any = nil
 		if v, ok := prev["prev_user_id"].(float64); ok && v != 0 {
 			pid = int64(v)
 		}
-		if target != nil {
+		if v, ok := prev["prev_event_user_id"].(float64); ok && v != 0 {
+			pid = int64(v)
+		}
+		if !restoredAgents && target != nil {
 			_, _ = db.Exec(ctx, `UPDATE endpoint_agents SET user_id=$1 WHERE id=$2`, pid, *target)
 		}
 		if h, ok := prev["hostname"].(string); ok {

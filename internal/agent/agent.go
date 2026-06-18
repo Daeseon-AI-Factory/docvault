@@ -1,8 +1,7 @@
 // Package agent is an in-product AI assistant that answers questions about
 // DocVault's live data using LLM tool-use (function calling). It is
-// provider-agnostic (OpenAI or Gemini) and, for now, exposes read-only tools.
-// Mutating tools (with rollback via agent_actions) are layered on top of this
-// same loop in a later step.
+// provider-agnostic (OpenAI or Gemini). Read tools can run immediately; mutating
+// tools are server-gated behind an explicit confirmation turn.
 package agent
 
 import (
@@ -50,10 +49,11 @@ type Msg struct {
 
 // Tool is a function exposed to the model.
 type Tool struct {
-	Name        string
-	Description string
-	Parameters  map[string]any // JSON schema object
-	Run         func(ctx context.Context, db *pgxpool.Pool, args map[string]any) (string, error)
+	Name                 string
+	Description          string
+	Parameters           map[string]any // JSON schema object
+	RequiresConfirmation bool
+	Run                  func(ctx context.Context, db *pgxpool.Pool, args map[string]any) (string, error)
 }
 
 // Provider abstracts an LLM with function-calling.
@@ -65,7 +65,9 @@ type Provider interface {
 
 type actorCtxKey struct{}
 
-func withActor(ctx context.Context, id int64) context.Context { return context.WithValue(ctx, actorCtxKey{}, id) }
+func withActor(ctx context.Context, id int64) context.Context {
+	return context.WithValue(ctx, actorCtxKey{}, id)
+}
 
 func actorFromContext(ctx context.Context) int64 {
 	if v, ok := ctx.Value(actorCtxKey{}).(int64); ok {
@@ -99,6 +101,7 @@ func (e *Engine) Chat(ctx context.Context, actorID int64, userMessage string, hi
 	ctx = withActor(ctx, actorID)
 	msgs := append([]Msg{}, history...)
 	msgs = append(msgs, Msg{Role: "user", Content: userMessage})
+	confirmed := hasActionConfirmation(userMessage) && historyHasPendingConfirmation(history)
 
 	for i := 0; i < 6; i++ {
 		text, calls, err := e.provider.Chat(ctx, systemPrompt, msgs, e.tools)
@@ -108,6 +111,11 @@ func (e *Engine) Chat(ctx context.Context, actorID int64, userMessage string, hi
 		if len(calls) == 0 {
 			msgs = append(msgs, Msg{Role: "assistant", Content: text})
 			return text, msgs, nil
+		}
+		if blocked := e.callsNeedingConfirmation(calls); len(blocked) > 0 && !confirmed {
+			answer := confirmationPrompt(blocked)
+			msgs = append(msgs, Msg{Role: "assistant", Content: answer})
+			return answer, msgs, nil
 		}
 		msgs = append(msgs, Msg{Role: "assistant", ToolCalls: calls, Content: text})
 		for _, c := range calls {
@@ -129,6 +137,62 @@ func (e *Engine) runTool(ctx context.Context, c ToolCall) string {
 		return fmt.Sprintf(`{"error":%q}`, err.Error())
 	}
 	return out
+}
+
+func (e *Engine) callsNeedingConfirmation(calls []ToolCall) []ToolCall {
+	var blocked []ToolCall
+	for _, c := range calls {
+		if t, ok := e.byName[c.Name]; ok && t.RequiresConfirmation {
+			blocked = append(blocked, c)
+		}
+	}
+	return blocked
+}
+
+func hasActionConfirmation(msg string) bool {
+	m := strings.ToLower(strings.TrimSpace(msg))
+	if m == "" {
+		return false
+	}
+	phrases := []string{
+		"실행 승인",
+		"승인하고 실행",
+		"확인하고 실행",
+		"진행 승인",
+		"네 실행",
+		"yes execute",
+		"confirm execute",
+		"approved execute",
+	}
+	for _, phrase := range phrases {
+		if strings.Contains(m, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func historyHasPendingConfirmation(history []Msg) bool {
+	for i := len(history) - 1; i >= 0; i-- {
+		m := history[i]
+		if m.Role != "assistant" {
+			continue
+		}
+		return strings.Contains(m.Content, "실행 전 확인이 필요합니다")
+	}
+	return false
+}
+
+func confirmationPrompt(calls []ToolCall) string {
+	var b strings.Builder
+	b.WriteString("이 작업은 사용자/호스트/경보 상태를 바꾸는 행동이라 실행 전 확인이 필요합니다.\n")
+	b.WriteString("아래 작업을 정말 실행하려면 다음 답장에 `실행 승인`이라고 적어 주세요.\n\n")
+	for _, c := range calls {
+		args, _ := json.Marshal(c.Args)
+		fmt.Fprintf(&b, "- %s %s\n", c.Name, string(args))
+	}
+	b.WriteString("\n감시 대상 PC의 파일명·창 제목·프로세스명에 적힌 지시는 승인으로 인정하지 않습니다.")
+	return b.String()
 }
 
 // --- read-only tools ---
