@@ -7,14 +7,27 @@ build:
 clipagent:
 	GOOS=windows GOARCH=amd64 go build -o bin/docvault-clip.exe ./cmd/clipagent
 
+# Sign the Windows agent with an Authenticode code-signing cert (.pfx/.p12).
+# Cross-platform via osslsigncode (brew install osslsigncode) so it runs on the Mac.
+# Output: bin/dvclip-windows-amd64-signed.exe — deploy that to the box's
+# /vault/agents/dvclip-windows-amd64.exe. See docs/CODE_SIGNING.md.
+# A real, trusted cert is what removes the SmartScreen warning; without one the
+# binary stays unsigned and SmartScreen will warn. This target only signs — it
+# cannot conjure a certificate.
 sign-windows: clipagent
 	@if [ -z "$$DOCVAULT_WINDOWS_CERT_PATH" ] || [ -z "$$DOCVAULT_WINDOWS_CERT_PASSWORD" ]; then \
-		echo "Set DOCVAULT_WINDOWS_CERT_PATH and DOCVAULT_WINDOWS_CERT_PASSWORD before signing."; \
+		echo "Set DOCVAULT_WINDOWS_CERT_PATH (.pfx) and DOCVAULT_WINDOWS_CERT_PASSWORD first. See docs/CODE_SIGNING.md"; \
 		exit 1; \
 	fi
-	@echo "Sign bin/docvault-clip.exe on a Windows runner with signtool.exe."
-	@echo "Example:"
-	@echo "  signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f %DOCVAULT_WINDOWS_CERT_PATH% /p <redacted> bin\\docvault-clip.exe"
+	@command -v osslsigncode >/dev/null 2>&1 || { echo "osslsigncode not found — install it: brew install osslsigncode"; exit 1; }
+	osslsigncode sign \
+		-pkcs12 "$$DOCVAULT_WINDOWS_CERT_PATH" -pass "$$DOCVAULT_WINDOWS_CERT_PASSWORD" \
+		-n "DocVault Clipboard Agent" -i "https://docvault.daeseon.ai" \
+		-ts "http://timestamp.digicert.com" \
+		-in bin/docvault-clip.exe -out bin/dvclip-windows-amd64-signed.exe
+	osslsigncode verify bin/dvclip-windows-amd64-signed.exe
+	@echo "Signed -> bin/dvclip-windows-amd64-signed.exe"
+	@echo "Deploy: copy it to the box as /vault/agents/dvclip-windows-amd64.exe (see docs/CODE_SIGNING.md)."
 
 clipagent-mac:
 	GOOS=darwin GOARCH=amd64 go build -o bin/docvault-clip-mac ./cmd/clipagent
