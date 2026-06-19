@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>DocVault — Learn (private)</title>
+<style>
+  :root{
+    --bg:#f1f5f9; --card:#ffffff; --ink:#0f172a; --muted:#475569; --line:#e2e8f0;
+    --blue:#2563eb; --blue-bg:#eff6ff; --green:#16a34a; --green-bg:#f0fdf4;
+    --amber-bg:#fffbeb; --amber-line:#fde68a; --amber-ink:#92400e; --chip:#e2e8f0;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0b1220; --card:#111a2e; --ink:#e7eef6; --muted:#9fb0c3; --line:#22314d;
+      --blue:#60a5fa; --blue-bg:#13243f; --green:#34d399; --green-bg:#10261d;
+      --amber-bg:#2a230f; --amber-line:#5b4a17; --amber-ink:#fcd34d; --chip:#22314d;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:17px;line-height:1.7;-webkit-text-size-adjust:100%}
+  .wrap{max-width:760px;margin:0 auto;padding:0 16px calc(96px + env(safe-area-inset-bottom))}
+  header.top{position:sticky;top:0;z-index:20;background:var(--card);border-bottom:1px solid var(--line);
+    padding:calc(10px + env(safe-area-inset-top)) 16px 10px;display:flex;align-items:center;gap:10px}
+  header.top b{font-size:1.05rem}
+  header.top a.back{color:var(--muted);text-decoration:none;font-size:.9rem}
+  header.top .spacer{flex:1}
+  .toc-btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;
+    padding:6px 12px;font-size:.9rem;cursor:pointer}
+  h1{font-size:1.5rem;margin:1.2rem 0 .3rem}
+  h2{font-size:1.2rem;margin:1.6rem 0 .2rem;scroll-margin-top:64px}
+  .lead{color:var(--muted)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;margin:12px 0;overflow:hidden}
+  details.card>summary{list-style:none;cursor:pointer;padding:14px 16px;font-weight:700;display:flex;gap:8px;align-items:center}
+  details.card>summary::-webkit-details-marker{display:none}
+  details.card>summary::after{content:"＋";margin-left:auto;color:var(--muted);font-weight:700}
+  details.card[open]>summary::after{content:"－"}
+  details.card>summary:active{background:var(--blue-bg)}
+  .card .body{padding:0 16px 14px;border-top:1px solid var(--line)}
+  .card .body p{margin:.6rem 0}
+  .tag{display:inline-block;font-size:.72rem;font-weight:800;border-radius:999px;padding:2px 9px;margin-right:6px}
+  .t-what{background:var(--blue-bg);color:var(--blue)}
+  .t-why{background:var(--green-bg);color:var(--green)}
+  .t-alt{background:var(--chip);color:var(--muted)}
+  .t-trade{background:var(--amber-bg);color:var(--amber-ink)}
+  .big{background:var(--blue-bg);border:2px solid var(--blue);border-radius:14px;padding:14px 18px;margin:14px 0}
+  .flow{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;white-space:pre-wrap;
+    font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.82rem;line-height:1.7;overflow-x:auto;color:var(--ink)}
+  code{background:var(--chip);border-radius:5px;padding:1px 6px;font-size:.88em}
+  .reveal{margin-top:.5rem}
+  .reveal>summary{cursor:pointer;color:var(--blue);font-weight:700;list-style:none}
+  .reveal>summary::-webkit-details-marker{display:none}
+  .reveal>summary::before{content:"👉 Show the answer";}
+  .reveal[open]>summary::before{content:"▾ Answer";}
+  .reveal .ans{background:var(--green-bg);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-top:8px}
+  .warn{background:var(--amber-bg);border:1px solid var(--amber-line);color:var(--amber-ink);border-radius:12px;padding:12px 16px;margin:12px 0}
+  ul.course{list-style:none;padding:0;margin:0}
+  ul.course li{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+  ul.course input{width:22px;height:22px;margin-top:2px;flex:0 0 auto}
+  ul.course li.done label{opacity:.5;text-decoration:line-through}
+  .prog{height:8px;background:var(--chip);border-radius:999px;overflow:hidden;margin:.4rem 0}
+  .prog>i{display:block;height:100%;background:var(--green);width:0}
+  #toc{display:none;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;margin:10px 0}
+  #toc.open{display:block}
+  #toc a{display:block;padding:9px 10px;color:var(--ink);text-decoration:none;border-radius:8px}
+  #toc a:active{background:var(--blue-bg)}
+  #top{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:30;
+    background:var(--blue);color:#fff;border:none;border-radius:999px;width:48px;height:48px;font-size:1.2rem;
+    box-shadow:0 6px 18px rgba(0,0,0,.25);cursor:pointer;opacity:.92}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="back" href="/dashboard">← Dashboard</a>
+  <div class="spacer"></div>
+  <b>📚 Learn</b>
+  <div class="spacer"></div>
+  <a class="toc-btn" href="/admin/learn" style="text-decoration:none;margin-right:6px">🌐 한국어</a>
+  <button class="toc-btn" onclick="document.getElementById('toc').classList.toggle('open')">Contents</button>
+</header>
+
+<div class="wrap">
+  <nav id="toc">
+    <a href="#start">0. How to use this</a>
+    <a href="#big">1. One-liner + the big picture</a>
+    <a href="#stack">2. The stack — why / alternatives / trade-offs</a>
+    <a href="#terms">3. Glossary (from zero)</a>
+    <a href="#concepts">4. Six core concepts + interview answers</a>
+    <a href="#qa">5. Likely interview questions</a>
+    <a href="#weak">6. Honest weaknesses</a>
+    <a href="#course">7. Study plan (progress saved)</a>
+  </nav>
+
+  <h1 id="start">DocVault, explained in plain English</h1>
+  <p class="lead">A <b>private</b> study page built for reading on a phone/tablet. <b>Tap a card to expand it.</b> Your progress is saved on this device.</p>
+  <div class="big">
+    <b>Mindset, one line</b><br>You don't need to memorize the code line by line. If you can explain the <b>big picture + the six "why I chose this" decisions</b> in your own words, you're set.
+    It was built with AI help, but <b>I drove the architecture, the decisions, the verification, and the deployment</b> — that's the point.
+  </div>
+
+  <h2 id="big">1. One-liner + the big picture</h2>
+  <div class="big">
+    <b>One-liner:</b> "An insider-threat monitoring tool for small teams that <b>collects, records, and reviews data-exfiltration activity on employee PCs</b> (copy, USB, external transfer)."
+  </div>
+  <p class="lead">What it is NOT (say this too): not DRM, not ML-based UEBA, not a legal-evidence system, not a finished production security product.</p>
+  <div class="flow">[Employee PC]                 [Server (cloud)]              [Admin]
+ agent (clipboard) ─┐
+ osquery (file/USB)─┼─PSK · HTTPS─▶ ingest → PostgreSQL
+                   │               └ DB trigger: hash chain (tamper-proof)
+                   │               └ rule engine: risk score → Slack alert
+                   └───────────────▶ web UI + AI assistant ◀── Admin</div>
+  <ol class="lead">
+    <li>Install a small <b>agent</b> (+ optional osquery) on the employee PC</li>
+    <li>It <b>ships activity to the server</b> (authenticated with a PSK)</li>
+    <li>The server <b>stores it in Postgres</b>; a trigger builds a <b>hash chain</b> to detect tampering</li>
+    <li>A <b>rule engine</b> scores risky behavior → alerts</li>
+    <li>The admin reviews via the <b>web UI / AI assistant</b> (actions are reversible)</li>
+  </ol>
+
+  <h2 id="stack">2. The stack — why / alternatives / trade-offs</h2>
+  <p class="lead">The classic interview question is "why did you use X?" → just give each card's <span class="tag t-trade">trade-off</span>.</p>
+
+  <details class="card"><summary>① Language: Go</summary><div class="body">
+    <p><span class="tag t-what">what</span>Google's language; compiles to a <b>single dependency-free executable</b>.</p>
+    <p><span class="tag t-why">why</span>Deploy is one file (server + agent), great concurrency, fast and lightweight, crypto in the standard library.</p>
+    <p><span class="tag t-alt">alternatives</span>Python (slow, heavy to deploy) · Node (needs a runtime) · Java (heavy, verbose).</p>
+    <p><span class="tag t-trade">trade-off</span>Simple and easy to ship (+) ↔ code can be a bit repetitive (−). For a small team running one language across server and agent, Go is the sweet spot.</p>
+  </div></details>
+
+  <details class="card"><summary>② Database: PostgreSQL</summary><div class="body">
+    <p><span class="tag t-what">what</span>The most trusted open-source relational database.</p>
+    <p><span class="tag t-why">why</span>Top-tier integrity, <b>triggers</b> to automate the hash chain, JSON support, free.</p>
+    <p><span class="tag t-alt">alternatives</span>MySQL (slightly fewer features) · SQLite (light but weak concurrent writes) · MongoDB (flexible schema but weaker integrity/joins).</p>
+    <p><span class="tag t-trade">trade-off</span>Strong integrity and features (+) ↔ heavier to operate than SQLite (−). For a product where audit and integrity are the point, Postgres is the right call.</p>
+  </div></details>
+
+  <details class="card"><summary>③ Router: chi</summary><div class="body">
+    <p><span class="tag t-what">what</span>A lightweight Go library that routes requests to the right handler.</p>
+    <p><span class="tag t-why">why</span>100% compatible with the standard net/http and keeps middleware (audit, auth) clean.</p>
+    <p><span class="tag t-alt">alternatives</span>Raw net/http (more manual) · gin/echo (more features, heavier, opinionated).</p>
+    <p><span class="tag t-trade">trade-off</span>Close to the standard, easy, low lock-in (+) ↔ fancy features you wire yourself (−).</p>
+  </div></details>
+
+  <details class="card"><summary>④ DB access: pgx + sqlc (no ORM)</summary><div class="body">
+    <p><span class="tag t-what">what</span>A Postgres driver plus a tool that turns SQL into type-safe Go code.</p>
+    <p><span class="tag t-why">why</span>Direct control over SQL + type safety, and <b>parameterized queries</b> shut down SQL injection.</p>
+    <p><span class="tag t-alt">alternatives</span>An ORM (GORM): convenient but slower, weak on complex queries, lots of "magic".</p>
+    <p><span class="tag t-trade">trade-off</span>Control, performance, transparency (+) ↔ a bit more typing (−). When correct queries matter (security/audit), raw SQL beats ORM magic.</p>
+  </div></details>
+
+  <details class="card"><summary>⑤ Auth: JWT (instead of server sessions)</summary><div class="body">
+    <p><span class="tag t-what">what</span>A signed token (a tamper-proof badge) stored in a cookie.</p>
+    <p><span class="tag t-why">why</span>The server doesn't hit a session store on every request (scales); the token carries identity and role.</p>
+    <p><span class="tag t-alt">alternatives</span>Server-side sessions: easy instant revocation, but you need a store.</p>
+    <p><span class="tag t-trade">trade-off</span>Light and scalable (+) ↔ revoking a token before it expires is awkward (−) → mitigated with short expiry + refresh.</p>
+  </div></details>
+
+  <details class="card"><summary>⑥ UI: htmx + Go templates (instead of React)</summary><div class="body">
+    <p><span class="tag t-what">what</span>The server sends HTML fragments and htmx swaps just that piece in. No JS build step.</p>
+    <p><span class="tag t-why">why</span>Build a dynamic UI fast, with no heavy front-end toolchain, in one language (Go).</p>
+    <p><span class="tag t-alt">alternatives</span>React/Vue (SPA): app-like UX, but build, complexity, and front-end staffing.</p>
+    <p><span class="tag t-trade">trade-off</span>Simple, fast to build (+) ↔ limits for highly interactive screens (−). For an internal admin tool, htmx is the best bang for the buck.</p>
+  </div></details>
+
+  <details class="card"><summary>⑦ Encryption: AES-256-GCM (chunked)</summary><div class="body">
+    <p><span class="tag t-what">what</span>Files are split into 64 KB chunks, each encrypted with AES-256-GCM.</p>
+    <p><span class="tag t-why">why</span>GCM gives confidentiality <b>and</b> tamper detection together. Chunking streams large files and detects reordering/truncation.</p>
+    <p><span class="tag t-alt">alternatives (dropped)</span>AES-CTR: fast but <b>no tamper detection</b> → we caught the risk and switched to GCM (a real incident).</p>
+    <p><span class="tag t-trade">trade-off</span>Safe, integrity included (+) ↔ slightly heavier (−). For a security product, GCM every time.</p>
+  </div></details>
+
+  <details class="card"><summary>⑧ Key management: envelope encryption</summary><div class="body">
+    <p><span class="tag t-what">what</span>Each file is encrypted with its own key; that file key is encrypted with the master key and stored in the DB.</p>
+    <p><span class="tag t-why">why</span>You only have to protect one master key. Key rotation and isolation become easy.</p>
+    <p><span class="tag t-alt">alternatives</span>Encrypt every file directly with the master key: simple, but rotating means re-encrypting everything, and no isolation.</p>
+    <p><span class="tag t-trade">trade-off</span>Operational flexibility (+) ↔ one extra layer of structure (−). The standard answer when you have many files and key rotation.</p>
+  </div></details>
+
+  <details class="card"><summary>⑨ Log integrity: DB-trigger hash chain</summary><div class="body">
+    <p><span class="tag t-what">what</span>On insert, a trigger automatically computes a hash of "previous row's hash + this content" and chains them.</p>
+    <p><span class="tag t-why">why</span>If someone edits or deletes a log directly in the DB, the chain breaks and it's detectable.</p>
+    <p><span class="tag t-alt">alternatives</span>Plain append-only log (weak tamper detection) · external immutable store (powerful but complex/costly).</p>
+    <p><span class="tag t-trade">trade-off</span>Low cost, good detection (+) ↔ you must handle concurrent-insert races (−) → solved with an advisory lock.</p>
+  </div></details>
+
+  <details class="card"><summary>⑩ Collection: osquery + our own clipboard agent</summary><div class="body">
+    <p><span class="tag t-what">what</span>File/USB/process via osquery (existing open source); clipboard via a small agent we wrote.</p>
+    <p><span class="tag t-why">why</span>Don't reinvent the wheel — use battle-tested osquery, and only build the clipboard piece it can't see.</p>
+    <p><span class="tag t-alt">alternatives</span>Build everything ourselves (more time/bugs) · a commercial EDR (expensive/overkill).</p>
+    <p><span class="tag t-trade">trade-off</span>Balances cost and reliability (+) ↔ you must merge two systems for the user (−) → solved with a "unified timeline".</p>
+  </div></details>
+
+  <details class="card"><summary>⑪ Agent execution: a Windows Scheduled Task (not a service)</summary><div class="body">
+    <p><span class="tag t-what">what</span>A per-user task that auto-runs the agent in the interactive session at logon.</p>
+    <p><span class="tag t-why">why</span>A Windows service runs in Session 0 (no desktop) and <b>can't read the clipboard</b>. A scheduled task runs in the user's session → capture works (a real fix we made).</p>
+    <p><span class="tag t-alt">alternatives</span>A service (can't capture) · manual run (stops when closed).</p>
+    <p><span class="tag t-trade">trade-off</span>Captures + auto-starts (+) ↔ less isolation/management tooling than a service (−). If the clipboard is the goal, a scheduled task is the right answer.</p>
+  </div></details>
+
+  <details class="card"><summary>⑫ AI: tool-use (instead of RAG)</summary><div class="body">
+    <p><span class="tag t-what">what</span>Give the model tools (query / create / assign) and let natural-language requests trigger those tool calls (OpenAI/Gemini).</p>
+    <p><span class="tag t-why">why</span>The data is structured (DB), so SQL tools fit better than document search (RAG) → answers are grounded in real rows (less hallucination). Mutations require human confirmation + are reversible.</p>
+    <p><span class="tag t-alt">alternatives</span>RAG (great for document Q&A, wrong for structured data) · fine-tuning (expensive/overkill).</p>
+    <p><span class="tag t-trade">trade-off</span>Accurate, real-time, can act (+) ↔ needs tool/permission design and injection defense (−) → solved with a confirmation gate.</p>
+  </div></details>
+
+  <details class="card"><summary>⑬ Deployment: Docker Compose + shared box + Caddy</summary><div class="body">
+    <p><span class="tag t-what">what</span>Server and DB as containers, co-located on one cloud box with another project, with Caddy handling automatic HTTPS.</p>
+    <p><span class="tag t-why">why</span>Cuts cost (share a box) + simple deploy + automatic certificates.</p>
+    <p><span class="tag t-alt">alternatives</span>Install per server (poor reproducibility) · Kubernetes (powerful but overkill for one person) · Nginx (manual certs).</p>
+    <p><span class="tag t-trade">trade-off</span>Simple and cheap (+) ↔ limits for high availability / large scale (−). The right answer for solo ops; revisit k8s when it grows.</p>
+  </div></details>
+
+  <h2 id="terms">3. Glossary (from zero)</h2>
+  <details class="card"><summary>Basic structure (server, backend, etc.)</summary><div class="body">
+    <p><b>Server</b>: an always-on computer that handles requests (the kitchen). <b>Client</b>: the requester (a browser).</p>
+    <p><b>Backend</b>: the logic/server/data behind the scenes. <b>Frontend</b>: the screen the user sees.</p>
+    <p><b>Compile</b>: translate human code into something the computer runs → a <b>binary</b> (executable, .exe).</p>
+    <p><b>Middleware</b>: a step that runs before/after every request (e.g. "check login", audit logging).</p>
+  </div></details>
+  <details class="card"><summary>Database</summary><div class="body">
+    <p><b>DB</b>: a data warehouse. <b>Table</b>: a sheet like Excel. <b>Row/column</b>: one record / a field.</p>
+    <p><b>SQL</b>: the language to talk to the DB. <b>Query</b>: one such question. <b>Transaction</b>: group steps as "all or nothing".</p>
+    <p><b>Trigger</b>: an automatic action inside the DB when something happens. <b>Migration</b>: applying DB-structure changes in order.</p>
+  </div></details>
+  <details class="card"><summary>Web communication</summary><div class="body">
+    <p><b>HTTP</b>: the browser↔server conversation rules. <b>HTTPS</b>: the encrypted version (the padlock).</p>
+    <p><b>API</b>: a defined window for programs to talk. <b>Endpoint</b>: one concrete API address (e.g. <code>/api/events/clipboard</code>).</p>
+    <p><b>Routing</b>: directing each incoming request to the right handler.</p>
+  </div></details>
+  <details class="card"><summary>Security (the core)</summary><div class="body">
+    <p><b>Encryption</b>: scramble so it's unreadable without a key. <b>Key</b>: the secret that locks/unlocks. <b>AES-256</b>: the standard symmetric cipher. <b>GCM</b>: a mode that does encryption + tamper detection.</p>
+    <p><b>Hash</b>: a fixed-length "fingerprint" of data (not reversible). <b>Hash chain</b>: link each row's fingerprint to the previous to detect tampering.</p>
+    <p><b>Authentication</b>: who are you (login). <b>Authorization</b>: are you allowed. <b>JWT</b>: a tamper-proof badge token. <b>2FA/TOTP</b>: password + a 6-digit code.</p>
+    <p><b>CSRF</b>: another site abusing your logged-in state → blocked with a CSRF token. <b>Rate limit</b>: cap the number of attempts (stops brute force).</p>
+    <p><b>PSK</b>: a pre-shared secret between server and agent. <b>fail-closed</b>: if config is missing, deny rather than allow. <b>Code signing</b>: a "verified publisher" stamp on the executable (without it, Windows shows a SmartScreen warning).</p>
+  </div></details>
+  <details class="card"><summary>Endpoint (employee PC) · AI · deployment</summary><div class="body">
+    <p><b>Agent</b>: the small monitoring program on the PC. <b>Scheduled Task</b>: auto-runs at logon in the user session (so the clipboard can be captured). <b>osquery</b>: open source that queries the PC like SQL.</p>
+    <p><b>LLM</b>: a language AI like ChatGPT. <b>Tool-use</b>: the AI calls defined functions. <b>RAG</b>: find documents then answer. <b>Hallucination</b>: the AI making things up. <b>Prompt injection</b>: hiding commands in data to trick the AI.</p>
+    <p><b>Container/Docker</b>: a standard box holding the program + its environment. <b>Reverse proxy</b>: a front desk that routes requests to back services (Caddy). <b>CI</b>: a robot that auto-builds/tests on every push. <b>Commit/branch/PR/merge</b>: units of code-history management.</p>
+  </div></details>
+
+  <h2 id="concepts">4. Six core concepts (analogy + interview answer)</h2>
+  <details class="card"><summary>① Envelope encryption</summary><div class="body">
+    <p><b>Analogy</b>: lock valuables in small safes (file keys), and keep those keys in one bigger master safe.</p>
+    <details class="reveal"><summary></summary><div class="ans">"Each file is encrypted with its own AES-256-GCM key, and those keys are sealed with a master key in the DB — which makes key rotation and isolation easy."</div></details>
+  </div></details>
+  <details class="card"><summary>② Hash chain</summary><div class="body">
+    <p><b>Analogy</b>: a ledger where each page records the previous page's fingerprint — tear one out and it shows.</p>
+    <details class="reveal"><summary></summary><div class="ans">"I guarantee audit-log integrity with a DB-trigger hash chain, and I serialize concurrent inserts with a transaction-scoped advisory lock."</div></details>
+  </div></details>
+  <details class="card"><summary>③ Agent + PSK</summary><div class="body">
+    <p><b>Analogy</b>: no badge (PSK), no entry. The clipboard is only visible from the employee's own desk (their session).</p>
+    <details class="reveal"><summary></summary><div class="ans">"The agent authenticates with a PSK header, and the server is fail-closed if no PSK is configured. The clipboard is session-bound, so I run the agent as a scheduled task in the user's session."</div></details>
+  </div></details>
+  <details class="card"><summary>④ AI tool-use</summary><div class="body">
+    <p><b>Analogy</b>: hand the AI a fixed set of buttons (tools); the dangerous buttons only fire after a human confirms.</p>
+    <details class="reveal"><summary></summary><div class="ans">"Since the data is structured, I went with tool-use instead of RAG. Read tools run immediately; mutating tools require an explicit confirmation turn, and every change is audited and reversible."</div></details>
+  </div></details>
+  <details class="card"><summary>⑤ Auth & access control</summary><div class="body">
+    <p><b>Analogy</b>: the badge (JWT) states your rank; the admin door only opens after checking it. 2FA is an extra lock.</p>
+    <details class="reveal"><summary></summary><div class="ans">"I enforce access control at both the route and the repository boundary, and I store 2FA secrets encrypted with the master key rather than in plaintext."</div></details>
+  </div></details>
+  <details class="card"><summary>⑥ Deployment (Docker/Caddy)</summary><div class="body">
+    <p><b>Analogy</b>: pack everything into a standard shipping container so it unpacks the same anywhere. Caddy is the building's front desk.</p>
+    <details class="reveal"><summary></summary><div class="ans">"I deploy with Docker on a single cloud box and get automatic TLS from Caddy. The demo runs as a separate stack, isolated from real data."</div></details>
+  </div></details>
+
+  <h2 id="qa">5. Likely interview questions</h2>
+  <details class="card"><summary>Q. One-line description? / Why did you build it?</summary><div class="body"><div class="ans">The one-liner + "small teams want to catch internal data leaks without an expensive security suite."</div></div></details>
+  <details class="card"><summary>Q. Hardest technical problem?</summary><div class="body"><div class="ans">(pick one) the hash-chain concurrency race (solved with an advisory lock) / the clipboard not being readable from Session 0 (switched to a scheduled task) / unsigned-.bat install friction (SmartScreen).</div></div></details>
+  <details class="card"><summary>Q. How is it secured?</summary><div class="body"><div class="ans">Envelope encryption + hash chain + roles/2FA + fail-closed agent PSK + parameterized SQL.</div></div></details>
+  <details class="card"><summary>Q. AI wrote much of the code — what's your contribution?</summary><div class="body"><div class="ans">"I drove the architecture, the technical decisions, the adversarial review, and the deployment. For example, an adversarial review caught a passwordless-admin vulnerability in the demo login, which I then fixed."</div></div></details>
+  <details class="card"><summary>Q. What would you change to scale it?</summary><div class="body"><div class="ans">Code signing, multi-tenancy, high availability, a proper osquery end-to-end verification, and real (ML) UEBA.</div></div></details>
+
+  <h2 id="weak">6. Honest weaknesses (saying them first scores points)</h2>
+  <div class="warn">
+    • Much of the code was AI-written → frame it as <b>"I drove the architecture, decisions, verification, and deployment."</b><br>
+    • Single box (not highly available), osquery e2e unverified, small-scale target, unsigned agent (SmartScreen).<br>
+    • Be explicit that <b>it's not a production security product</b> — not overstating it builds trust.
+  </div>
+
+  <h2 id="course">7. Study plan (checkboxes save on this device)</h2>
+  <div class="prog"><i id="bar"></i></div>
+  <p class="lead" id="progtext">0 / 9 done</p>
+  <ul class="course" id="course">
+    <li><input type="checkbox" id="c1"><label for="c1">Day 1 — read the README and click around the live demo</label></li>
+    <li><input type="checkbox" id="c2"><label for="c2">Day 2 — ARCHITECTURE + memorize the "big picture" 5 steps</label></li>
+    <li><input type="checkbox" id="c3"><label for="c3">Day 3–4 — the 6 core concepts; say each "why?" out loud</label></li>
+    <li><input type="checkbox" id="c4"><label for="c4">Day 5 — DECISIONS.md (why these choices)</label></li>
+    <li><input type="checkbox" id="c5"><label for="c5">Day 6 — LIMITATIONS.md (limits / what it's not)</label></li>
+    <li><input type="checkbox" id="c6"><label for="c6">Day 7 — 2–3 problem-solving stories from the logs</label></li>
+    <li><input type="checkbox" id="c7"><label for="c7">Week 2 — skim the internal/ folder structure</label></li>
+    <li><input type="checkbox" id="c8"><label for="c8">Week 2 — read one file: encryption.go / agent.go</label></li>
+    <li><input type="checkbox" id="c9"><label for="c9">Week 2 — change one small thing and deploy it</label></li>
+  </ul>
+  <p class="lead" style="margin-top:1.4rem">Stuck on a term or a tech? Point at just one and ask "explain this simpler" — happy to go deeper. Take your time.</p>
+</div>
+
+<button id="top" title="Top" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+<script>
+  (function(){
+    var boxes = Array.prototype.slice.call(document.querySelectorAll('#course input[type=checkbox]'));
+    var bar = document.getElementById('bar'), txt = document.getElementById('progtext');
+    function refresh(){
+      var done = 0;
+      boxes.forEach(function(b){
+        var on = localStorage.getItem('dv-learn-'+b.id) === '1';
+        b.checked = on; b.parentElement.classList.toggle('done', on);
+        if(on) done++;
+      });
+      bar.style.width = Math.round(done/boxes.length*100)+'%';
+      txt.textContent = done+' / '+boxes.length+' done';
+    }
+    boxes.forEach(function(b){
+      b.addEventListener('change', function(){
+        localStorage.setItem('dv-learn-'+b.id, b.checked ? '1':'0');
+        refresh();
+      });
+    });
+    refresh();
+    document.querySelectorAll('#toc a').forEach(function(a){
+      a.addEventListener('click', function(){ document.getElementById('toc').classList.remove('open'); });
+    });
+  })();
+</script>
+</body>
+</html>
