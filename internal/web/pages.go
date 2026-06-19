@@ -1088,6 +1088,14 @@ func (h *PageHandler) LearnPage(w http.ResponseWriter, r *http.Request) {
 	renderStandalone(w, h.tc, "learn.html", map[string]interface{}{})
 }
 
+// LearnPageEN serves the English version of the private learning page (admin-only).
+func (h *PageHandler) LearnPageEN(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+	renderStandalone(w, h.tc, "learn_en.html", map[string]interface{}{})
+}
+
 func (h *PageHandler) CreateInstallLink(w http.ResponseWriter, r *http.Request) {
 	u, ok := h.requireAdmin(w, r)
 	if !ok {

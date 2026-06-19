@@ -111,6 +111,12 @@ func newTemplateCache() (*templateCache, error) {
 	}
 	tc.cache["learn.html"] = learnTmpl
 
+	learnEnTmpl, err := template.New("learn_en.html").Funcs(funcMap).ParseFS(templateFS, "templates/learn_en.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse learn_en template: %w", err)
+	}
+	tc.cache["learn_en.html"] = learnEnTmpl
+
 	return tc, nil
 }
 
