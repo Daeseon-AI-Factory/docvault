@@ -208,6 +208,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Get("/admin/users", deps.PageHandler.AdminUsersPage)
 			r.Get("/admin/alerts", deps.PageHandler.AdminAlertsPage)
 			r.Get("/admin/agents", deps.PageHandler.AdminAgentsPage)
+			r.Get("/admin/learn", deps.PageHandler.LearnPage)
 			r.Get("/admin/install", deps.PageHandler.InstallPage)
 			r.Post("/admin/install-links/create", deps.PageHandler.CreateInstallLink)
 			r.Post("/admin/install-links/{tokenID}/revoke", deps.PageHandler.RevokeInstallLink)

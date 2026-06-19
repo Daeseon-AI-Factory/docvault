@@ -104,6 +104,13 @@ func newTemplateCache() (*templateCache, error) {
 	}
 	tc.cache["employee_install.html"] = employeeInstallTmpl
 
+	// Standalone mobile-first learning page (admin-only, private).
+	learnTmpl, err := template.New("learn.html").Funcs(funcMap).ParseFS(templateFS, "templates/learn.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse learn template: %w", err)
+	}
+	tc.cache["learn.html"] = learnTmpl
+
 	return tc, nil
 }
 
