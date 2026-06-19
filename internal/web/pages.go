@@ -1078,6 +1078,16 @@ func (h *PageHandler) InstallPage(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, h.tc, "admin_install.html", data)
 }
 
+// LearnPage serves a private, mobile-first learning page (admin-only) — a
+// standalone full-screen page (no app sidebar) for studying the project on a
+// phone/tablet.
+func (h *PageHandler) LearnPage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.requireAdmin(w, r); !ok {
+		return
+	}
+	renderStandalone(w, h.tc, "learn.html", map[string]interface{}{})
+}
+
 func (h *PageHandler) CreateInstallLink(w http.ResponseWriter, r *http.Request) {
 	u, ok := h.requireAdmin(w, r)
 	if !ok {
