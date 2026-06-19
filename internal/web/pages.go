@@ -367,7 +367,14 @@ func (h *PageHandler) DemoLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		h.demoLoginUsername,
 	).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.FullName, &u.Role, &u.Department, &u.IsActive,
 		&u.TOTPSecret, &u.TOTPEnabled, &u.CreatedAt, &u.UpdatedAt)
-	if err != nil || !u.IsActive || u.TOTPEnabled {
+	// Defense-in-depth: a demo login must NEVER hand out an admin (or 2FA) account,
+	// even if DOCVAULT_DEMO_LOGIN_USERNAME is misconfigured to point at one. This
+	// caps the blast radius if DOCVAULT_DEMO_LOGIN_ENABLED is ever set on a real
+	// instance — the worst case becomes a non-admin session, not admin takeover.
+	if err != nil || !u.IsActive || u.TOTPEnabled || u.Role == user.RoleAdmin {
+		if u.Role == user.RoleAdmin && h.logger != nil {
+			h.logger.Warn("demo login refused: configured demo user has admin role", "username", h.demoLoginUsername)
+		}
 		http.Error(w, "demo login unavailable", http.StatusServiceUnavailable)
 		return
 	}

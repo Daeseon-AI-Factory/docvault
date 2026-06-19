@@ -19,7 +19,7 @@ services:
       DOCVAULT_INSTANCE_LABEL: Portfolio Demo
       DOCVAULT_DEMO_SEED: "true"
       DOCVAULT_DEMO_LOGIN_ENABLED: "true"
-      DOCVAULT_DEMO_LOGIN_USERNAME: admin
+      DOCVAULT_DEMO_LOGIN_USERNAME: demo
 
   server:
     environment:
@@ -27,6 +27,6 @@ services:
       DOCVAULT_INSTANCE_LABEL: Portfolio Demo
       DOCVAULT_DEMO_SEED: "true"
       DOCVAULT_DEMO_LOGIN_ENABLED: "true"
-      DOCVAULT_DEMO_LOGIN_USERNAME: admin
+      DOCVAULT_DEMO_LOGIN_USERNAME: demo
     ports: !override
       - "127.0.0.1:${DOCVAULT_DEMO_HTTP_PORT:-18080}:8080"
