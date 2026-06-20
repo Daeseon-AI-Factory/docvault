@@ -1,0 +1,34 @@
+---
+title: "Making the AI assistant guide a non-technical admin (lightweight RAG, not a vector DB)"
+date: "2026-06-20"
+project: "docvault"
+kind: "update"
+visibility: "public"
+language: "en"
+summary: "The operator found the UI hard and wanted the AI to guide them. Added a doc-grounded help_docs tool so the assistant answers how-to/install questions strictly from a curated usage guide — lightweight RAG, no vector DB needed at this scale."
+tags: ["ai", "rag", "tool-use", "ux"]
+---
+
+The person running DocVault is a non-technical admin. The web UI was "too hard," and the natural fix wasn't to redraw every screen — it was to let them just **ask the AI** "how do I install this on an employee's PC?" and get a correct, step-by-step answer.
+
+## The gap
+
+The assistant was a *data* assistant: tool-use over live rows (`event_counts`, `list_users`, `list_alerts`, …) plus action tools (create user, assign host, ack alert). It had **no usage knowledge** — ask it a how-to and it had nothing to ground on, so it would flounder or risk inventing steps. Usage docs existed (`manual.ko.html`) but the agent never read them.
+
+## "Do we need RAG?"
+
+The operator's instinct was right: answers must be **fact-based**, from our docs, not freestyled. That's exactly what RAG is — **retrieve, then generate**. But "RAG" doesn't have to mean a vector database + embeddings. That machinery earns its keep when the corpus is too big to fit in context. Our usage guide is a couple of KB.
+
+So the accurate, simple choice: a curated guide (`internal/agent/help_kb.md`, embedded) and a **`help_docs` tool** that returns it. The model reads the whole guide and answers grounded in it. For a small KB this is *more* accurate than vector retrieval — there's no retrieval step to miss, and the LLM itself handles paraphrase ("how do I install it" ↔ the guide's "에이전트 설치"). We upgrade to ranked/embedding retrieval only when the KB stops fitting in context.
+
+## What shipped (commit `c3c2c69`)
+
+- `help_kb.md`: a curated, plain-Korean how-to guide written against the *actual* UI (login, register users, CSV import, install on employee PCs incl. the SmartScreen steps, host assignment, viewing risk, acknowledging alerts, using the assistant).
+- `help_docs` tool wired into `NewEngine`; system prompt now says: for usage/install/how-to questions, call `help_docs` first and answer step-by-step in simple Korean **grounded only in that text**; if it's not in the guide, say so — don't invent.
+- Dashboard AI box now invites how-to questions ("직원 컴퓨터에 어떻게 깔아?").
+
+The existing injection defense still holds: the help guide is trusted content the developer wrote; tool *output from monitored PCs* remains untrusted and can't trigger actions.
+
+## Lesson
+
+"We need RAG" usually means "ground it in our facts." Do that — but match the retrieval to the corpus. For a small, curated KB, returning the guide *is* the retrieval; a vector DB would be over-engineering.
