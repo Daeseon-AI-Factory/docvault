@@ -276,6 +276,7 @@ func run(logger *slog.Logger) error {
 	// AI assistant: tool-use agent over live data (same keys as the summary bot).
 	agentProvider := agent.NewProvider(cfg.OpenAIAPIKey, cfg.GeminiAPIKey, cfg.AIProvider, cfg.AIModel)
 	agentHandler := agent.NewHandler(agent.NewEngine(pool, agentProvider, logger), logger)
+	agentHandler.SetDemo(agent.NewReadOnlyEngine(pool, agentProvider, logger), cfg.DemoLoginEnabled, cfg.DemoLoginUsername)
 	if agentProvider != nil {
 		logger.Info("AI assistant enabled", "provider", agentProvider.Name())
 	}
@@ -335,6 +336,9 @@ func run(logger *slog.Logger) error {
 		AgentHandler:    agentHandler,
 		TOTPProtector:   totpProtector,
 		Logger:          logger,
+
+		DemoLoginEnabled:  cfg.DemoLoginEnabled,
+		DemoLoginUsername: cfg.DemoLoginUsername,
 	})
 
 	srv := &http.Server{

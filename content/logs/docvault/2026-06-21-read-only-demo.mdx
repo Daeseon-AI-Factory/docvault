@@ -1,0 +1,30 @@
+---
+title: "A portfolio demo should show the whole product — make it read-only, not lower-privilege"
+date: "2026-06-21"
+project: "docvault"
+kind: "tech-retro"
+visibility: "public"
+language: "en"
+summary: "The demo had been made a non-admin for safety, which hid the AI assistant and admin screens — so it looked like a different, crippled product. Fixed by making the demo a full admin but enforcing read-only at the middleware and in the AI engine."
+tags: ["demo", "security", "ux", "ai"]
+---
+
+The public portfolio demo looked nothing like the real DocVault: no AI assistant, no AI briefing, no admin screens. The reason was a well-intentioned safety fix gone wrong.
+
+## How it broke
+
+Earlier I'd hardened the passwordless demo login to refuse admin accounts (so it couldn't hand out admin). But almost everything interesting — the AI assistant, the security briefing, user/agent/install management — is admin-only. A non-admin demo user therefore saw a stripped half-product. The instinct (don't grant passwordless admin) was right; the mechanism (lower the role) was wrong for a showcase.
+
+## The fix: full visibility, read-only enforcement
+
+"Least privilege" for a public demo isn't a lower role — it's **see everything, change nothing**:
+
+- The demo user is an **admin** again, so the demo is identical to the real product (all screens + the AI).
+- A `DemoReadOnly` middleware (on both the cookie and API groups) blocks every mutating request from the demo user — allowing reads and the AI chat only — returning a friendly "read-only demo" message.
+- The assistant runs on a **read-only engine** (`agent.NewReadOnlyEngine`, no action tools) when the actor is the demo user. This matters because AI actions execute server-side inside the chat request and would otherwise **bypass HTTP method checks**.
+
+So a visitor can explore the entire product, ask the AI questions, and run the briefing — but can't create, delete, assign, or make the AI act. It's also safe if `DEMO_LOGIN_ENABLED` were ever misconfigured on a real instance: the worst case is a read-only view, not a takeover, and visitors can't vandalize the demo for the next person.
+
+## Lesson
+
+For a public demo, don't reach for a smaller role — that hides what you're trying to show. Give full visibility and enforce read-only at two layers: the HTTP middleware for normal mutations, and the AI's toolset for actions that never touch an HTTP verb.
