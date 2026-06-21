@@ -41,6 +41,9 @@ type RouterDeps struct {
 	AgentHandler    *agent.Handler
 	TOTPProtector   *auth.SecretProtector
 	Logger          *slog.Logger
+
+	DemoLoginEnabled  bool
+	DemoLoginUsername string
 }
 
 func NewRouter(deps RouterDeps) http.Handler {
@@ -103,6 +106,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	// Protected API routes
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Middleware(deps.JWTSvc))
+		r.Use(DemoReadOnly(deps.DemoLoginEnabled, deps.DemoLoginUsername))
 		r.Use(audit.Middleware(deps.AuditRepo, deps.Logger))
 
 		r.Get("/api/me", func(w http.ResponseWriter, r *http.Request) {
@@ -187,6 +191,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(auth.TokenRefreshMiddleware(deps.JWTSvc))
 		r.Use(auth.WebMiddleware(deps.JWTSvc))
+		r.Use(DemoReadOnly(deps.DemoLoginEnabled, deps.DemoLoginUsername))
 		r.Use(audit.Middleware(deps.AuditRepo, deps.Logger))
 		r.Use(CSRFMiddleware(deps.JWTSvc.Secret()))
 

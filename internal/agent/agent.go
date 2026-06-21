@@ -90,7 +90,16 @@ type Engine struct {
 }
 
 func NewEngine(db *pgxpool.Pool, provider Provider, logger *slog.Logger) *Engine {
-	tools := append(append(readTools(), actionTools()...), helpTools()...)
+	return engineWith(db, provider, logger, append(append(readTools(), actionTools()...), helpTools()...))
+}
+
+// NewReadOnlyEngine omits the mutating action tools — used for the public demo so
+// the AI can query/brief/guide but cannot change anything.
+func NewReadOnlyEngine(db *pgxpool.Pool, provider Provider, logger *slog.Logger) *Engine {
+	return engineWith(db, provider, logger, append(readTools(), helpTools()...))
+}
+
+func engineWith(db *pgxpool.Pool, provider Provider, logger *slog.Logger, tools []Tool) *Engine {
 	byName := make(map[string]Tool, len(tools))
 	for _, t := range tools {
 		byName[t.Name] = t
@@ -425,17 +434,34 @@ func readTools() []Tool {
 
 // Handler exposes the assistant over HTTP (admin-only via router middleware).
 type Handler struct {
-	engine *Engine
-	logger *slog.Logger
+	engine      *Engine
+	roEngine    *Engine // read-only engine for the demo user (no action tools)
+	demoEnabled bool
+	demoUser    string
+	logger      *slog.Logger
 }
 
 func NewHandler(engine *Engine, logger *slog.Logger) *Handler {
 	return &Handler{engine: engine, logger: logger}
 }
 
+// SetDemo wires a read-only engine used when the demo user chats, so the public
+// demo showcases the assistant without letting it mutate anything.
+func (h *Handler) SetDemo(roEngine *Engine, enabled bool, demoUser string) {
+	h.roEngine = roEngine
+	h.demoEnabled = enabled
+	h.demoUser = demoUser
+}
+
 func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if h.engine == nil || !h.engine.Enabled() {
+	engine := h.engine
+	if h.demoEnabled && h.roEngine != nil {
+		if u := auth.UserFromContext(r.Context()); u != nil && u.Username == h.demoUser {
+			engine = h.roEngine
+		}
+	}
+	if engine == nil || !engine.Enabled() {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		json.NewEncoder(w).Encode(map[string]string{"error": "AI 비서가 설정되지 않았습니다 (DOCVAULT_OPENAI_API_KEY 또는 DOCVAULT_GEMINI_API_KEY 필요)."})
 		return
@@ -453,7 +479,7 @@ func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
 	if u := auth.UserFromContext(r.Context()); u != nil {
 		actorID = u.ID
 	}
-	answer, history, err := h.engine.Chat(r.Context(), actorID, req.Message, req.History)
+	answer, history, err := engine.Chat(r.Context(), actorID, req.Message, req.History)
 	if err != nil {
 		h.logger.Error("agent chat", "error", err)
 		w.WriteHeader(http.StatusBadGateway)

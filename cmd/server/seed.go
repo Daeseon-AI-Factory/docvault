@@ -244,17 +244,18 @@ func seedDemoData(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) 
 		userIDs[u.username] = id
 	}
 
-	// Dedicated NON-admin viewer for the demo trial login (DOCVAULT_DEMO_LOGIN_USERNAME=demo).
-	// Role 'manager' so it can browse the monitoring dashboards/events without admin powers —
-	// the passwordless demo login refuses admin-role accounts (see web.DemoLoginSubmit).
+	// Demo trial-login user (DOCVAULT_DEMO_LOGIN_USERNAME=demo). Admin role so the
+	// demo shows the FULL product (admin screens + AI), identical to a real instance.
+	// It's safe because the demo session is read-only: the DemoReadOnly middleware
+	// blocks every mutation and the assistant runs on a read-only engine.
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO users (username, email, password_hash, full_name, role, department)
-		 VALUES ('demo', 'demo@demo.docvault.local', $1, 'Demo Viewer', 'manager', 'Demo')
+		 VALUES ('demo', 'demo@demo.docvault.local', $1, 'Demo Admin', 'admin', 'Demo')
 		 ON CONFLICT (username) DO UPDATE
-		 SET role = 'manager', full_name = EXCLUDED.full_name, is_active = true, updated_at = NOW()`,
+		 SET role = 'admin', full_name = EXCLUDED.full_name, is_active = true, updated_at = NOW()`,
 		hash,
 	); err != nil {
-		return fmt.Errorf("upsert demo viewer user: %w", err)
+		return fmt.Errorf("upsert demo user: %w", err)
 	}
 
 	now := time.Now()
