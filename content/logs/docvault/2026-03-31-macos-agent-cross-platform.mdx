@@ -1,0 +1,25 @@
+---
+title: "A macOS clipboard agent, and splitting the agent cross-platform"
+date: "2026-03-31"
+project: "docvault"
+kind: "update"
+visibility: "public"
+language: "en"
+summary: "Added a macOS clipboard agent and refactored the single 397-line main into clean per-platform files (Windows/macOS) with a shared core and a launchd service."
+tags: ["go", "macos", "agent", "cross-platform"]
+---
+
+_Reconstructed from commit `be4aba5` (2026-03-31)._
+
+The clipboard agent started life as one big Windows-only `main.go` (~397 lines). To support macOS too, it needed to be split along the OS boundary — shared logic in the middle, platform-specific bits behind build tags.
+
+## The refactor
+
+- **Shared core** moved to `cmd/clipagent/agent.go` (~152 lines): the enroll loop, the bounded event queue, retry/backoff, and the report-to-server logic — identical on every OS.
+- **Per-platform clipboard**: `clipboard_darwin.go` (macOS, via the system pasteboard) and `clipboard_windows.go` (Windows clipboard APIs), each implementing the same `ClipboardMonitor` interface. Go build tags pick the right one at compile time.
+- **Per-platform service**: `service_windows.go` (Windows service registration) and `service_darwin.go`, plus a **launchd** definition `deploy/launchd/com.docvault.clipagent.plist` so the agent runs as a background service on macOS.
+- `main.go` shrank from 397 lines to a thin entry point; `Makefile` gained cross-compile targets.
+
+## Why it matters
+
+The architecture lesson that paid off repeatedly: keep the OS-specific surface tiny and behind an interface, so the agent's real logic (enrollment, queueing, delivery) is written and tested once. Adding a third platform later is just one more file, not a rewrite. (Months on, this same structure is what let the Windows install move from a service to a Scheduled Task without touching the core.)

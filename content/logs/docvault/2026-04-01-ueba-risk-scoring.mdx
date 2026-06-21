@@ -1,0 +1,30 @@
+---
+title: "Behavior risk scoring (rule-based UEBA), with per-user baselines"
+date: "2026-04-01"
+project: "docvault"
+kind: "update"
+visibility: "public"
+language: "en"
+summary: "Added a risk-scoring engine that compares each event against a per-user behavioral baseline (work hours, weekends, known IPs, …) and accumulates weighted anomaly scores. Threshold-rule based — deliberately not ML."
+tags: ["go", "ueba", "risk-scoring", "detection"]
+---
+
+_Reconstructed from commits `e4b25ae` and `890c22f` (2026-04-01)._
+
+Raw events are noise until you know what's *unusual for this person*. So DocVault learns a simple **baseline** per user and scores deviations from it.
+
+## Honest framing: rules, not machine learning
+
+This is **threshold/rule-based** scoring, not ML — and the product is explicit about that (it is *not* an ML-based UEBA, see LIMITATIONS). The value is transparency: every risk score decomposes into named factors you can explain to an auditor, not a black-box number.
+
+## How it works
+
+`internal/ueba/analyzer.go` (~416 lines):
+- A **`Baseline`** per user captures "normal": `TypicalStartHour`/`TypicalEndHour`, `WorksWeekends`, `KnownIPs`, etc.
+- **`AnalyzeEvent`** checks each incoming event against that baseline and emits **`RiskFactor`s**, each with a weight. Detected anomaly types include **after-hours access**, **weekend access**, and **new/unknown IP** — combined via an `AnomalyWeight` map into a weighted score with severity levels.
+- A **baseline scheduler** (`890c22f`, wired in `cmd/server/main.go`) periodically recomputes each user's normal pattern so the baseline tracks reality instead of going stale.
+- Migration `011_ueba` stores the data; the **dashboard** gained a top-risk-users widget; `analyzer_test.go` (~164 lines) pins the scoring.
+
+## Why this shape
+
+For a small team, a few well-chosen, explainable rules beat an opaque model you can't defend. The scoring surfaces "Alice copied files at 2am from a new IP" as a ranked, reasoned alert — and a human decides. (Real ML UEBA stays on the roadmap, clearly labeled as future work.)
