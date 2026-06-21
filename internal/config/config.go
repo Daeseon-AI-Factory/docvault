@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 type Config struct {
@@ -18,6 +19,15 @@ type Config struct {
 	InstanceLabel     string
 	DemoLoginEnabled  bool
 	DemoLoginUsername string
+
+	// Email alerts + daily digest (optional; all email features off if SMTPHost empty).
+	SMTPHost  string
+	SMTPPort  string
+	SMTPUser  string
+	SMTPPass  string
+	SMTPFrom  string
+	PublicURL string // e.g. https://docvault.daeseon.ai — used in email links
+	DigestHour int   // local (Asia/Seoul) hour to send the daily digest, default 9
 
 	// Optional: enables the AI summary bot + assistant. Disabled if all keys empty.
 	// Provider precedence (when AIProvider unset): openai > gemini > anthropic.
@@ -42,6 +52,13 @@ func Load() (*Config, error) {
 		InstanceLabel:     os.Getenv("DOCVAULT_INSTANCE_LABEL"),
 		DemoLoginEnabled:  truthyEnv(os.Getenv("DOCVAULT_DEMO_LOGIN_ENABLED")),
 		DemoLoginUsername: os.Getenv("DOCVAULT_DEMO_LOGIN_USERNAME"),
+
+		SMTPHost:  os.Getenv("DOCVAULT_SMTP_HOST"),
+		SMTPPort:  os.Getenv("DOCVAULT_SMTP_PORT"),
+		SMTPUser:  os.Getenv("DOCVAULT_SMTP_USER"),
+		SMTPPass:  os.Getenv("DOCVAULT_SMTP_PASS"),
+		SMTPFrom:  os.Getenv("DOCVAULT_SMTP_FROM"),
+		PublicURL: os.Getenv("DOCVAULT_PUBLIC_URL"),
 
 		AnthropicAPIKey: os.Getenv("DOCVAULT_ANTHROPIC_API_KEY"),
 		GeminiAPIKey:    os.Getenv("DOCVAULT_GEMINI_API_KEY"),
@@ -79,6 +96,17 @@ func Load() (*Config, error) {
 	}
 	if cfg.DemoLoginUsername == "" {
 		cfg.DemoLoginUsername = "admin"
+	}
+	if cfg.SMTPPort == "" {
+		cfg.SMTPPort = "587"
+	}
+	if cfg.SMTPFrom == "" {
+		cfg.SMTPFrom = cfg.SMTPUser
+	}
+	if h, err := strconv.Atoi(os.Getenv("DOCVAULT_DIGEST_HOUR")); err == nil && h >= 0 && h <= 23 {
+		cfg.DigestHour = h
+	} else {
+		cfg.DigestHour = 9
 	}
 
 	return cfg, nil

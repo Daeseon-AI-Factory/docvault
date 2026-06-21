@@ -7,17 +7,45 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/JasonAIFactory/Product024_JasonDRM/internal/auth"
 )
 
 type Handler struct {
-	repo   *Repository
-	logger *slog.Logger
+	repo     *Repository
+	logger   *slog.Logger
+	notifier *Notifier
+	pool     *pgxpool.Pool
 }
 
 func NewHandler(repo *Repository, logger *slog.Logger) *Handler {
 	return &Handler{repo: repo, logger: logger}
+}
+
+// SetDigest wires the notifier + pool so the daily digest can be sent on demand.
+func (h *Handler) SetDigest(notifier *Notifier, pool *pgxpool.Pool) {
+	h.notifier = notifier
+	h.pool = pool
+}
+
+// SendDigestNow (POST /api/alerts/digest-now, admin-only) emails the daily
+// security digest immediately — for testing the email pipeline and for an
+// on-demand "send me the summary now".
+func (h *Handler) SendDigestNow(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if h.notifier == nil || !h.notifier.email.enabled() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "이메일이 설정되지 않았습니다 (DOCVAULT_SMTP_HOST/USER/PASS, DOCVAULT_ALERT_EMAIL 필요)."})
+		return
+	}
+	if err := h.notifier.SendDailyDigest(r.Context(), h.pool, h.repo); err != nil {
+		h.logger.Error("send digest now", "error", err)
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "발송 실패: " + err.Error()})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "sent", "to": h.notifier.email.To})
 }
 
 // ListAlerts handles GET /api/alerts?unacked=true&limit=&offset=
