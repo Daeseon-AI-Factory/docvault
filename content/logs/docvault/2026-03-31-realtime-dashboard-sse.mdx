@@ -1,0 +1,29 @@
+---
+title: "Real-time dashboard updates with Server-Sent Events"
+date: "2026-03-31"
+project: "docvault"
+kind: "update"
+visibility: "public"
+language: "en"
+summary: "Added a Server-Sent Events hub so the dashboard updates live as endpoint events arrive — no polling, no WebSocket complexity."
+tags: ["go", "sse", "realtime", "dashboard"]
+---
+
+_Reconstructed from commit `94ef922` (2026-03-31)._
+
+A monitoring tool that makes you refresh to see new activity isn't really a monitoring tool. So the dashboard needed to update **as events happen**.
+
+## Why SSE (not WebSockets, not polling)
+
+The data only flows one direction — server → browser ("a new event just arrived"). For that, **Server-Sent Events** is the right size: it's plain HTTP, auto-reconnects in the browser, and needs no extra protocol or library. WebSockets would add bidirectional machinery we don't use; polling would be wasteful and laggy.
+
+## What shipped
+
+- `internal/web/sse.go` (~160 lines): a small **hub** that tracks connected dashboard clients and broadcasts events to all of them. Each browser opens one long-lived `text/event-stream` connection.
+- `internal/endpoint/handler.go`: when an endpoint event is ingested, it's pushed to the hub, which fans it out to every open dashboard.
+- `dashboard.html`: subscribes to the stream and prepends new activity live.
+- Wired in `cmd/server/main.go` + a route in `router.go`, with `sse_test.go` covering the hub.
+
+One subtlety that bit later work: the response wrapper has to preserve `http.Flusher`, or the stream buffers and nothing shows up in real time.
+
+The result: open the dashboard, copy a file on a monitored PC, and the event appears within a second — no refresh.

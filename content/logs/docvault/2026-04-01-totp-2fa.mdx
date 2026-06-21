@@ -1,0 +1,32 @@
+---
+title: "Two-factor authentication (TOTP) with recovery codes"
+date: "2026-04-01"
+project: "docvault"
+kind: "update"
+visibility: "public"
+language: "en"
+summary: "Added TOTP-based 2FA implemented from the RFC primitives (HMAC-based one-time codes), a QR setup flow, a second login step, and recovery codes."
+tags: ["go", "security", "2fa", "totp"]
+---
+
+_Reconstructed from commit `9b9f322` (2026-04-01)._
+
+For a tool that holds sensitive monitoring data, a password alone is thin. So admins get **TOTP two-factor auth** — the 6-digit code from an authenticator app (Google Authenticator, 1Password, etc.).
+
+## Built from the primitives, not a black box
+
+`internal/auth/totp.go` (~113 lines) implements the standard directly:
+- `GenerateTOTPSecret` — a random base32 secret per user.
+- `generateHOTP` — HMAC-based one-time password (the RFC 4226/6238 core): HMAC over a time counter, dynamic truncation to 6 digits.
+- `ValidateTOTP` / `ValidateTOTPAt` — checks the submitted code against the current time window (testable via the `At` variant).
+- `GenerateTOTPURI` — the `otpauth://` URI for the QR code in the setup page.
+
+A dedicated `totp_test.go` (~139 lines) pins the behavior against known vectors and time windows.
+
+## The flow
+
+- **Setup** (`totp_setup.html`): the user scans a QR, confirms a code, and 2FA turns on. **Recovery codes** are issued for the "lost my phone" case.
+- **Login** (`login_2fa.html`): after the password step, a TOTP-enabled account is sent to a second page that requires the code (the cookie and JSON paths both enforce it).
+- Storage: migration `010_totp` adds the secret/enabled columns; `jwt.go` and `user/model.go` carry the 2FA state.
+
+A later hardening pass encrypted the stored TOTP secret at rest (AES-GCM under the master key) — but the factor itself landed here.

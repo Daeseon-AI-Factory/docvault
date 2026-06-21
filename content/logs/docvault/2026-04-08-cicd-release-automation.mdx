@@ -1,0 +1,25 @@
+---
+title: "CI/CD, release automation, and one-command deploy scripts"
+date: "2026-04-08"
+project: "docvault"
+kind: "update"
+visibility: "public"
+language: "en"
+summary: "Added GitHub Actions CI + a release workflow, plus deploy scripts for the server and the Windows agents — turning ad-hoc builds into a repeatable pipeline."
+tags: ["ci-cd", "github-actions", "deploy", "automation"]
+---
+
+_Reconstructed from commit `baafdbe` (2026-04-08)._
+
+Up to this point, building and shipping was manual. This commit made it a pipeline.
+
+## What shipped
+
+- **`.github/workflows/ci.yml`** — build + vet + tests on every push, so a broken build is caught immediately instead of at deploy time. (This is the same CI that, much later, was extended with a `windows-latest` job to verify the agent end-to-end on real Windows.)
+- **`.github/workflows/release.yml`** — release automation: builds and packages the artifacts (server + agents) on a release, so versions are reproducible rather than hand-assembled.
+- **`scripts/install-server.sh`** — one-command server setup.
+- **`scripts/deploy-agents.ps1`** — a PowerShell script to roll the agent out to Windows machines.
+
+## Why it matters
+
+For a solo-run project, automation *is* the team. CI means "did I break it?" is answered in a minute, not discovered in production. Release automation means a deploy is a button, not a checklist you can fumble. Everything that came later — the co-located Docker deploy, the per-deploy install scripts, the Windows install-test job — built on this foundation of "the pipeline does it, not my memory."

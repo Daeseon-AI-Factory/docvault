@@ -1,0 +1,28 @@
+---
+title: "Hash-based file tracking — catch a sensitive file even after it's renamed"
+date: "2026-04-08"
+project: "docvault"
+kind: "update"
+visibility: "public"
+language: "en"
+summary: "Register sensitive files by SHA-256; the server matches incoming endpoint file events against those hashes (cached in memory) and records detections — so a tracked file is caught even if it's renamed."
+tags: ["go", "file-tracking", "sha256", "detection"]
+---
+
+_Reconstructed from commit `c017f84` (2026-04-08)._
+
+Name-based rules are trivial to dodge — rename `salary.xlsx` to `cat.jpg` and a name filter is blind. Content hashing isn't fooled by a rename.
+
+## How it works
+
+`internal/tracking/tracker.go` (~224 lines):
+- An admin **registers a file** (`tracked_files`, migration `012`) with its **SHA-256** (and MD5) plus a **sensitivity** label and description.
+- The tracker keeps an **in-memory hash set** (`sha256 → tracked_file_id`, refreshed from the DB) for O(1) lookups, so matching adds negligible latency to event ingestion.
+- When an endpoint reports a file event, `internal/endpoint/handler.go` checks the file's hash against the set. A hit creates a **`Detection`** record — "this exact sensitive file appeared on host X" — carrying the sensitivity label, even if the filename was changed.
+- An admin page (`admin_tracking.html`) lists tracked files and their detections.
+
+## Why it matters
+
+This turns "watch for files named like secrets" into "watch for *these specific files*, by content." Combined with the clipboard/USB/transfer events, it answers the real question — *did our actual confidential document leave?* — rather than guessing from filenames.
+
+(The same commit also relaxed the agent PSK requirement for local dev convenience; the production path stays fail-closed.)
