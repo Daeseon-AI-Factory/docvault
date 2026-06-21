@@ -1,0 +1,32 @@
+---
+title: "Email alerts + a daily digest — so the admin learns about issues without logging in"
+date: "2026-06-20"
+project: "docvault"
+kind: "update"
+visibility: "public"
+language: "en"
+summary: "Alerts were pull-only (dashboard) and the Slack notifier was unconfigured, so a non-technical admin who didn't log in never found out. Added SMTP email for high/critical alerts plus a daily Korean digest, with an on-demand send."
+tags: ["go", "email", "alerts", "notifications", "smtp"]
+---
+
+A monitoring tool that only shows problems *when you log in* doesn't notify you — it waits. For a non-technical admin running this for their company, that's a real hole: the alert engine was firing (11 rules, evaluated on every event) and the dashboard showed everything, but if they didn't open it, they'd never know.
+
+## The gap
+
+The only push channel was a Slack notifier, and on production `DOCVAULT_SLACK_WEBHOOK` was empty — so nothing went anywhere. `DOCVAULT_ALERT_EMAIL` existed as a config field with no code behind it. Email is what a small Korean team actually checks (Slack isn't common, and KakaoTalk business messaging needs a registered channel + template approval + a paid aggregator — far heavier).
+
+## What shipped (commit `383266`)
+
+- **SMTP email** via the standard library `net/smtp` (`internal/alert/email.go`) — no dependency, STARTTLS on port 587, works with a Gmail app password.
+- **Per-alert email** for **high/critical** severity only, so the inbox isn't flooded; everything lower still shows in-app and rolls up into the digest.
+- **Daily digest** (`internal/alert/digest.go`): a plain-Korean 24-hour summary — event counts by type + the unacknowledged alerts — scheduled at **09:00 Asia/Seoul**. The scheduler waits until the next scheduled hour, so a redeploy doesn't blast a digest on restart. It's deterministic (no AI, no cost) so it always works.
+- **On-demand**: admin-only `POST /api/alerts/digest-now` sends the digest immediately — for testing the pipeline and as a "send me the summary now" button.
+- Config: `DOCVAULT_SMTP_HOST/PORT/USER/PASS/FROM`, `DOCVAULT_PUBLIC_URL`, `DOCVAULT_DIGEST_HOUR`. All email features stay off unless SMTP host + from + recipient are set.
+
+## A gotcha worth flagging
+
+Cloud providers sometimes block **outbound SMTP (port 587)** to fight spam. So "it sends from my laptop" doesn't prove "it sends from the server" — the deployed box has to be verified directly (which is why the on-demand trigger is handy).
+
+## Lesson
+
+Surfacing issues in-app is necessary but not sufficient. Pair it with a proactive push the operator genuinely checks, gate per-event noise by severity, and let a daily digest carry the rest.
