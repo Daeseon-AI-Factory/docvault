@@ -229,9 +229,18 @@ func run(logger *slog.Logger) error {
 
 	// Alert dependencies (must be created before endpoint handler)
 	alertRepo := alert.NewRepository(pool)
-	alertNotifier := alert.NewNotifier(cfg.SlackWebhook)
+	alertNotifier := alert.NewNotifier(cfg.SlackWebhook, alert.EmailConfig{
+		Host:      cfg.SMTPHost,
+		Port:      cfg.SMTPPort,
+		User:      cfg.SMTPUser,
+		Pass:      cfg.SMTPPass,
+		From:      cfg.SMTPFrom,
+		To:        cfg.AlertEmail,
+		PublicURL: cfg.PublicURL,
+	})
 	alertEngine := alert.NewEngine(alertRepo, alertNotifier, logger)
 	alertHandler := alert.NewHandler(alertRepo, logger)
+	alertHandler.SetDigest(alertNotifier, pool)
 
 	// Monitoring config (DB-based, replaces all hardcoded process/extension lists)
 	monCfgRepo := monitoring.NewRepository(pool)
@@ -357,6 +366,35 @@ func run(logger *slog.Logger) error {
 			}
 			if err := uebaAnalyzer.RecalculateBaselines(schedCtx); err != nil {
 				logger.Error("scheduled baseline calculation", "error", err)
+			}
+		}
+	}()
+
+	// Daily security digest email (default 09:00 Asia/Seoul). No-op unless SMTP is
+	// configured. Waits until the next scheduled hour first, so a restart/redeploy
+	// doesn't fire a digest immediately.
+	go func() {
+		loc, err := time.LoadLocation("Asia/Seoul")
+		if err != nil {
+			loc = time.Local
+		}
+		for {
+			now := time.Now().In(loc)
+			next := time.Date(now.Year(), now.Month(), now.Day(), cfg.DigestHour, 0, 0, 0, loc)
+			if !next.After(now) {
+				next = next.Add(24 * time.Hour)
+			}
+			timer := time.NewTimer(time.Until(next))
+			select {
+			case <-schedCtx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			if err := alertNotifier.SendDailyDigest(schedCtx, pool, alertRepo); err != nil {
+				logger.Error("daily digest email", "error", err)
+			} else {
+				logger.Info("daily digest email sent")
 			}
 		}
 	}()

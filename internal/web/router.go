@@ -177,6 +177,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 
 		// Alert routes
 		r.Get("/api/alerts", deps.AlertHandler.ListAlerts)
+		r.With(auth.RequireRole("admin")).Post("/api/alerts/digest-now", deps.AlertHandler.SendDigestNow)
 		r.Post("/api/alerts/{alertID}/acknowledge", deps.AlertHandler.Acknowledge)
 		r.Get("/api/alerts/rules", deps.AlertHandler.ListRules)
 		r.Post("/api/alerts/rules", deps.AlertHandler.CreateRule)
