@@ -40,6 +40,10 @@ type ToolCall struct {
 	ID   string         `json:"id"`
 	Name string         `json:"name"`
 	Args map[string]any `json:"args"`
+	// Sig carries Gemini's opaque thoughtSignature for this functionCall. Gemini
+	// requires it to be echoed back when the call is replayed in the next turn, or
+	// it returns 400. Ignored by OpenAI.
+	Sig string `json:"sig,omitempty"`
 }
 
 // Msg is one entry in the conversation transcript (provider-neutral).
