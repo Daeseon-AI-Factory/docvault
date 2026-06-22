@@ -16,6 +16,11 @@ x-app-env: &app-env
   DOCVAULT_OSQUERY_PSK: ${DOCVAULT_OSQUERY_PSK:?run scripts/gen-env.sh first}
   DOCVAULT_VAULT_PATH: /vault
   DOCVAULT_LISTEN_ADDR: ":8080"
+  # Optional AI assistant (enabled when a key is set, e.g. in the demo .env)
+  DOCVAULT_GEMINI_API_KEY: ${DOCVAULT_GEMINI_API_KEY:-}
+  DOCVAULT_OPENAI_API_KEY: ${DOCVAULT_OPENAI_API_KEY:-}
+  DOCVAULT_AI_PROVIDER: ${DOCVAULT_AI_PROVIDER:-}
+  DOCVAULT_AI_MODEL: ${DOCVAULT_AI_MODEL:-}
 
 services:
   db:
