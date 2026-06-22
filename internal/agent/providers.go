@@ -184,6 +184,9 @@ type gmPart struct {
 	Text             string          `json:"text,omitempty"`
 	FunctionCall     *gmFunctionCall `json:"functionCall,omitempty"`
 	FunctionResponse *gmFunctionResp `json:"functionResponse,omitempty"`
+	// ThoughtSignature is Gemini's opaque token attached to a functionCall part;
+	// it MUST be echoed back when replaying the call, or Gemini returns 400.
+	ThoughtSignature string `json:"thoughtSignature,omitempty"`
 }
 type gmFunctionCall struct {
 	Name string         `json:"name"`
@@ -224,7 +227,10 @@ func (p *GeminiProvider) Chat(ctx context.Context, system string, msgs []Msg, to
 				c.Parts = append(c.Parts, gmPart{Text: m.Content})
 			}
 			for _, tc := range m.ToolCalls {
-				c.Parts = append(c.Parts, gmPart{FunctionCall: &gmFunctionCall{Name: tc.Name, Args: tc.Args}})
+				c.Parts = append(c.Parts, gmPart{
+					FunctionCall:     &gmFunctionCall{Name: tc.Name, Args: tc.Args},
+					ThoughtSignature: tc.Sig, // echo Gemini's signature back, required for tool-use
+				})
 			}
 			if len(c.Parts) == 0 {
 				c.Parts = []gmPart{{Text: ""}}
@@ -279,7 +285,7 @@ func (p *GeminiProvider) Chat(ctx context.Context, system string, msgs []Msg, to
 	var calls []ToolCall
 	for _, part := range pr.Candidates[0].Content.Parts {
 		if part.FunctionCall != nil {
-			calls = append(calls, ToolCall{ID: part.FunctionCall.Name, Name: part.FunctionCall.Name, Args: part.FunctionCall.Args})
+			calls = append(calls, ToolCall{ID: part.FunctionCall.Name, Name: part.FunctionCall.Name, Args: part.FunctionCall.Args, Sig: part.ThoughtSignature})
 		} else if part.Text != "" {
 			text.WriteString(part.Text)
 		}
