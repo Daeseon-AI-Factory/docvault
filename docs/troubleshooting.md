@@ -327,3 +327,4 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 - **Commit**: 25462c3d3dc73ac1a4e434a74c6498670d78151a
 - **Pattern**: LLM function-calling transcripts must be replayed *faithfully*, including provider-specific opaque fields (Gemini's `thoughtSignature`, OpenAI's tool_call `id`). Don't lossily reconstruct the assistant turn from just name+args.
 <!-- skipped: 091e021 Correct Gemini-fix log: 400 gone but live 200 unconfirmed (Google 503) [no-log] -->
+<!-- skipped: 117bbc2 Verify Gemini fix live: add re-runnable tool-use test (passes), mark log verified [no-log] -->
