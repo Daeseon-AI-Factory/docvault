@@ -11,7 +11,7 @@
 #   DOCVAULT_DEPLOY_HOST=root@<box-ip-or-host>
 #   DOCVAULT_DEPLOY_KEY=/abs/path/to/ssh/key
 #   DOCVAULT_DEPLOY_SRC=/opt/docvault-src          # build context on the box
-#   DOCVAULT_DEPLOY_COMPOSE=/opt/mimi              # dir holding the compose files
+#   DOCVAULT_DEPLOY_COMPOSE=/opt/docvault-app      # dir holding the compose files
 #   DOCVAULT_DEPLOY_URL=https://docvault.daeseon.ai
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -37,8 +37,8 @@ ${SSH} "${DOCVAULT_DEPLOY_HOST}" "
   set -e
   docker build -t docvault:latest '${DOCVAULT_DEPLOY_SRC}' 2>&1 | tail -2
   cd '${DOCVAULT_DEPLOY_COMPOSE}'
-  docker compose run --rm docvault-migrate
-  docker compose up -d --force-recreate docvault 2>&1 | tail -2
+  docker compose run --rm migrate
+  docker compose up -d --force-recreate server 2>&1 | tail -2
   docker builder prune -af >/dev/null 2>&1
   echo -n 'root disk: '; df -h / | tail -1
 "
