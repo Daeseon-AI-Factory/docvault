@@ -329,3 +329,15 @@ docker-compose.yml ran only `serve` against an empty database (no migration step
 <!-- skipped: 091e021 Correct Gemini-fix log: 400 gone but live 200 unconfirmed (Google 503) [no-log] -->
 <!-- skipped: 117bbc2 Verify Gemini fix live: add re-runnable tool-use test (passes), mark log verified [no-log] -->
 <!-- skipped: ea9d031 docs: rebuild README as portfolio landing — screenshots up top, engineering highlights, real metrics [no-log] -->
+
+## Vultr migration: containers healthy but public URLs dead (missing Caddy vhost)
+
+- **Symptom**: after the NCP box was shut down and DocVault moved to the Vultr box (158.247.241.199), `docvault-prod-server-1`/`docvault-demo-server-1` were `Up (healthy)` and internal `/health` returned `{"status":"ok"}`, but the public URL failed at the TLS layer:
+  ```
+  * Connected to docvault.daeseon.ai (158.247.241.199) port 443
+  * LibreSSL/3.3.6: error:1404B438:SSL routines:ST_CONNECT:tlsv1 alert internal error
+  ```
+- **Cause**: the live edge on the Vultr box is the **shared ds-forge Caddy** (`ds-forge-caddy-1`, config `/root/ds-forge/deploy/Caddyfile`), and it had **no docvault vhost** — `grep -i docvault` on it returned nothing. The docvault route only existed in the old NCP-era `/opt/mimi/Caddyfile`, which nothing serves anymore. With no vhost for the SNI, Caddy has no cert and aborts the handshake. The server containers were already attached to `ds-forge_default` with aliases `docvault`/`docvault-demo`, so only the vhost was missing.
+- **Fix**: Commit 8d0af7637bf0b211f9cc6ce2786e4d5642099a45 (repo side) — retargeted `scripts/deploy-box.sh` to the Vultr compose layout (`/opt/docvault-app`, service names `migrate`/`server` instead of `docvault-migrate`/`docvault`) and wrote a new gitignored `scripts/.deploy.env` pointing at the Vultr box. Server side (not in repo): appended `docvault.daeseon.ai` and `docvault-demo.158.247.241.199.sslip.io` vhost blocks to `/root/ds-forge/deploy/Caddyfile` (backup kept as `Caddyfile.bak.docvault`, snippet staged at `/opt/docvault-app/caddy-vhosts.snippet`), `caddy validate` then `caddy reload`. Verified: prod `/health` 200, demo `/health` 200, co-hosted `faangforge.daeseon.ai` and raw-IP vhost still 200.
+- **Commit**: 8d0af7637bf0b211f9cc6ce2786e4d5642099a45
+- **Pattern**: on a box with a shared reverse proxy, "deployed" means *routed*, not just "container healthy" — a migration checklist must include the edge vhost, and the proxy that owns ports 80/443 (`docker ps` on the ports) is the one to edit, not whichever old Caddyfile mentions your app.

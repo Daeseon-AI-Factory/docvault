@@ -1,0 +1,69 @@
+---
+title: "Moved DocVault from the NCP box to Vultr — containers were healthy, the URL was dead"
+date: "2026-07-09"
+project: "docvault"
+kind: "troubleshoot"
+visibility: "public"
+language: "en"
+summary: "The NCP server was shut down and DocVault moved to a shared Vultr box. Prod and demo containers were already running and healthy there, but both public URLs failed the TLS handshake — the shared edge Caddy had no docvault vhost. Wired the vhosts, retargeted the deploy script, redeployed latest main, verified everything (including the co-hosted apps) at 200."
+tags: ["deploy", "caddy", "docker", "migration", "vultr"]
+---
+
+The NCP server hosting DocVault was turned off; everything moved to a Vultr box
+(158.247.241.199) that already hosts several other projects behind one shared
+Caddy. When I picked the migration up, the state was further along than
+expected: `/opt/docvault-app` (a Vultr-specific prod compose + `.env`),
+`/opt/docvault-src`, a demo stack, and `docvault-prod-server-1` /
+`docvault-demo-server-1` running healthy for hours. DNS for
+`docvault.daeseon.ai` already pointed at the Vultr IP.
+
+And yet:
+
+```
+* Connected to docvault.daeseon.ai (158.247.241.199) port 443
+* LibreSSL/3.3.6: error:1404B438:SSL routines:ST_CONNECT:tlsv1 alert internal error
+```
+
+## Root cause: two Caddyfiles, only one is real
+
+The box has an old NCP-era `/opt/mimi/Caddyfile` that *does* contain a
+`docvault.daeseon.ai` route — but nothing serves it. The Caddy that actually
+owns ports 80/443 is `ds-forge-caddy-1`, mounting
+`/root/ds-forge/deploy/Caddyfile`, and that file had no docvault vhost at all.
+No vhost for the SNI → no certificate → Caddy aborts the handshake with
+`tlsv1 alert internal error`. The app containers were already attached to the
+`ds-forge_default` network with `docvault` / `docvault-demo` aliases, so the
+route was the *only* missing piece.
+
+## What changed
+
+- **Repo** (commit `8d0af7637bf0b211f9cc6ce2786e4d5642099a45`):
+  `scripts/deploy-box.sh` retargeted to the Vultr compose layout —
+  compose dir `/opt/docvault-app`, service names `migrate`/`server`
+  (the old box used `docvault-migrate`/`docvault`). New gitignored
+  `scripts/.deploy.env` pointing at the Vultr box.
+- **Box** (not in repo): appended `docvault.daeseon.ai` and
+  `docvault-demo.158.247.241.199.sslip.io` vhost blocks to the shared
+  Caddyfile — backup first, `caddy validate`, then `caddy reload`.
+  Because that file routes several other people's-projects-worth of
+  vhosts, the edit ran as an explicitly user-approved step with
+  auto-restore on validation failure.
+- **Redeploy**: `deploy-box.sh` shipped latest `main` (ea9d031) — rsync,
+  image build, `all migrations applied`, recreate. The demo stack reuses
+  the same `docvault:latest` image (`pull_policy: never`), so it only
+  needed migrate + seed (`seeded portfolio demo data`) + recreate.
+
+## Verified (actual outputs, same session)
+
+- `https://docvault.daeseon.ai/health` → `200`
+- `https://docvault-demo.158.247.241.199.sslip.io/health` → `200`
+- Co-hosted apps unaffected: `faangforge.daeseon.ai` → `200`, raw-IP vhost → `200`
+- Login page serves real content (`grep -c docvault` on `/login` → 3)
+- Bonus: the deploy script's `docker builder prune` dropped root-disk usage from 52G to 21G.
+
+## Lesson
+
+On a box with a shared reverse proxy, "deployed" means **routed**, not
+"container healthy". A migration checklist must include the edge vhost — and
+the proxy to edit is the one that owns ports 80/443 in `docker ps`, not
+whichever leftover Caddyfile happens to mention your app.
